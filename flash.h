@@ -31,13 +31,13 @@ void eraseSector(uint32_t addr);
 void writePage(uint32_t addr, const uint8_t* data, size_t len);
 void readData(uint32_t addr, uint8_t* buffer, size_t len);
 void limparFlashParcial(uint32_t addrIni, uint32_t addrFim);
-void exibirImagemDaFlash(
+/*void exibirImagemDaFlash(
   uint32_t enderecoInicial,
   int largura,
   int altura,
   int offsetX,
   int offsetY,
   void (*pixelHandler)(int x, int y, bool on)
-);
+);*/
 
 #endif
