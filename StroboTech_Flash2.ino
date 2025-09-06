@@ -12,12 +12,12 @@
 #include <arduinoFFT.h>
 
 // ==== Pinos ====
-#define ENCODER_PIN_A 32
-#define ENCODER_PIN_B 33
+#define ENCODER_PIN_A 33
+#define ENCODER_PIN_B 32
 #define BUTTON_MENU   25
 #define BUTTON_SET    13
-#define BUTTON_DOUBLE 26
-#define BUTTON_HALF   27
+#define BUTTON_DOUBLE 27
+#define BUTTON_HALF   26
 #define BUTTON_ENC    17
 #define LED_PIN       2       // Pino do LED de alta potência para o estroboscópio/lanterna
 #define SENSOR_IR_PIN 4       // Pino do sensor infravermelho para medição de RPM
@@ -130,9 +130,10 @@ TimerMicros fpmTest;
 
 // ==== Vetores da Flash ====
 std::vector<Config> dadosConfig;
+std::vector<Config> lastDadosConfig;
 std::vector<Config> displayConfig;
 int numIdioma = 1;
-String idioma = "";
+String idioma = "PT";
 bool saveData=false;
 // ==============
 
@@ -392,12 +393,35 @@ void exibirImagemDaFlash(uint32_t enderecoInicial, int largura, int altura, int 
   display.display();  // Atualiza o display ao final
 }
 
-bool updateValuesRec(){
-  if(saveData){
-    if(salvarArquivo(dadosConfig, 0x002000, 0x0020FF)){
-      saveData=false;
+bool compararConfigs(const std::vector<Config>& a, const std::vector<Config>& b) {
+  if (a.size() != b.size()) {
+    return false; // Tamanho diferente, então é diferente
+  }
+  // Compara cada elemento
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (a[i].chave != b[i].chave || a[i].valor != b[i].valor) {
+      return false; // Encontrou uma diferença
     }
   }
+  return true; // Nenhum elemento diferente foi encontrado
+}
+
+bool updateValuesRec() {
+  // Compara o estado atual com o estado anterior
+  if (!compararConfigs(dadosConfig, lastDadosConfig)) {
+    //Serial.println("Mudanças detectadas. Salvando na EEPROM...");
+    // Se houver uma diferença, salva os dados
+    if (salvarDadosEEPROM(dadosConfig)) {
+      // Se o salvamento for bem-sucedido, atualiza a variável do estado anterior
+      lastDadosConfig = dadosConfig;
+      Serial.println("Dados salvos e atualizado.");
+      return true;
+    } else {
+      //Serial.println("Falha ao salvar. Nao atualizando lastDadosConfig.");
+      return false;
+    }
+  }
+  return false;
 }
 
 // ==== Setup dos botões ====
@@ -416,6 +440,8 @@ void setup() {
   // Inicializa o pino do sensor IR
   pinMode(SENSOR_IR_PIN, INPUT);
   setupButtons();
+
+  EEPROM.begin(EEPROM_SIZE);
 
   // Inicia a comunicação I2C com os pinos corretos
   Wire.begin(21, 22);  // SDA = 21, SCL = 22
@@ -444,47 +470,49 @@ void setup() {
   
   exibirImagemDaFlash(0x0041F, 128, 32, 0, 20);
 
-  //carregarArquivo(displayConfig, 0x00680, 0x001AD1);
-  carregarArquivo(dadosConfig, 0x002000, 0x0020FF);
+  if (EEPROM.read(0) == 0xFF) {
+    Serial.println("EEPROM vazia. Gravando valores padrao...");
+    
+    // Defina seus valores padrão aqui
+    setValor(dadosConfig, "IDIOMA", "1");
+    setValor(dadosConfig, "TIMEMEASURE", "30");
+    setValor(dadosConfig, "TIMECALIB", "10");
+    setValor(dadosConfig, "FPM", "3000");
+
+    // Salva os valores padrão na EEPROM
+    salvarDadosEEPROM(dadosConfig);
+  } else {
+    // Se a EEPROM nao estiver em branco, carrega os dados
+    carregarDadosEEPROM(dadosConfig);
+    lastDadosConfig = dadosConfig;
+  }
+
   numIdioma = getValor(dadosConfig, "IDIOMA").toInt();
   idioma = getSiglaIdioma(numIdioma);
   timeMeasure = getValor(dadosConfig, "TIMEMEASURE").toInt();
   timeCalib = getValor(dadosConfig, "TIMECALIB").toInt();
+  fpm= getValor(dadosConfig, "FPM").toInt();
   delay(1000);
   carregarArquivoParcial(displayConfig, 0x006DD, 0x001FFF, idioma);
   
   delay(1000);
   display.clearDisplay();
-  /*
-  setValor(dadosConfig, "IDIOMA", "1");
-  setValor(dadosConfig, "TIMEMEASURE", "30");
-  setValor(dadosConfig, "TIMECALIB", "10");
-  setValor(dadosConfig, "FPM", "3000");
-  setValor(dadosConfig, "INDICEARQUIVO", "0");
-  setValor(dadosConfig, "NEW", "0");
-  
-
-  if(salvarArquivo(dadosConfig, 0x002000, 0x0020FF)){
-    //Serial.println("Listando dadosConfig:");
-    for (auto& c : dadosConfig) {
-      Serial.println(c.chave + "=" + c.valor);
-    }
-  }
-  */
 }
 
 void loop() {
   handleInput();
   updateValues(); //Stroboscópio fica com a função rodando, mas não executa os leds. Apenas os contadores do timer.
-  updateMeasurement();
-  updateCalibration();
+  if(adxlAvailable){
+    updateMeasurement();
+    updateCalibration();
+  }
   if (inMenu) {
     drawMenu();
     STB_outputEnabled=false;
     TESTE_calc = false;
     Lant_calc = false;
     vibroState = VibroState::VIBRO_HOME;
-    updateValuesRec();
+    //updateValuesRec();
   } else {
     drawScreen(currentMode);
   }
@@ -494,7 +522,7 @@ void loop() {
       case Mode::FREQUENCY: {
         STB_outputEnabled=true;
         //Comandos para alterar o valor usando o Encoder
-        long newPos = encoder.read() / 4;  // Dividido por 4 para reduzir sensibilidade
+        long newPos = encoder.read() / 8;  // Dividido por 8 para reduzir sensibilidade
         if (inSubmenu) {
           int delta = newPos - STB_lastEncoderPos;
           STB_phaseDegrees = constrain(STB_phaseDegrees + delta, 0, 359);
@@ -570,12 +598,27 @@ void loop() {
 }
 
 void handleInput() {
+  // Variáveis separadas para o botão MENU
   static bool lastMenuState = HIGH;
-  static bool lastSetState  = HIGH;
   static unsigned long lastDebounceTimeMenu = 0;
-  static unsigned long lastDebounceTimeSet  = 0;
 
-  if (checkButtonDebounce(BUTTON_MENU, lastMenuState, lastDebounceTimeMenu)) {
+  // Variáveis separadas para o botão SET
+  static bool lastSetState = HIGH;
+  static unsigned long lastDebounceTimeSet = 0;
+  
+  // Variáveis separadas para o botão DOUBLE
+  static bool lastDoubleState = HIGH;
+  static unsigned long lastDebounceTimeDouble = 0;
+  
+  // Variáveis separadas para o botão HALF
+  static bool lastHalfState = HIGH;
+  static unsigned long lastDebounceTimeHalf = 0;
+  
+  // Variáveis separadas para o botão ENC
+  static bool lastEncState = HIGH;
+  static unsigned long lastDebounceTimeEnc = 0;
+
+  if (checkButtonDebounce(BUTTON_MENU, lastMenuState, lastDebounceTimeMenu, 50000)) {
     if (inSubmenu) {
       // Se estiver no submenu, apenas sai dele
       inSubmenu = false;
@@ -583,12 +626,13 @@ void handleInput() {
       // Se estiver fora do menu, entrar no menu com o modo atual
       currentMode = selectedMode;
       inMenu = true;
+      updateValuesRec();
     } else {
-      currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % static_cast<int>(Mode::NUM_MODES));
+      //currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % static_cast<int>(Mode::NUM_MODES));
     }
   }
 
-  if (checkButtonDebounce(BUTTON_SET, lastSetState, lastDebounceTimeSet)) {
+  if (checkButtonDebounce(BUTTON_SET, lastSetState, lastDebounceTimeSet, 50000)) {
     if (inMenu) {
       selectedMode = currentMode;
       inMenu = false;
@@ -638,7 +682,7 @@ void handleInput() {
     }
   }
 
-  if (checkButtonDebounce(BUTTON_DOUBLE, lastSetState, lastDebounceTimeSet)) {
+  if (checkButtonDebounce(BUTTON_DOUBLE, lastDoubleState, lastDebounceTimeDouble, 50000)) {
     if (inMenu) {
       currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % static_cast<int>(Mode::NUM_MODES));
     } else if(selectedMode == Mode::HOME){
@@ -660,9 +704,9 @@ void handleInput() {
     }
   }
 
-  if (checkButtonDebounce(BUTTON_HALF, lastSetState, lastDebounceTimeSet)) {
+  if (checkButtonDebounce(BUTTON_HALF, lastHalfState, lastDebounceTimeHalf, 50000)) {
     if (inMenu) {
-      currentMode = static_cast<Mode>((static_cast<int>(currentMode) - 1) % static_cast<int>(Mode::NUM_MODES));
+      currentMode = static_cast<Mode>((static_cast<int>(currentMode) - 1 + static_cast<int>(Mode::NUM_MODES)) % static_cast<int>(Mode::NUM_MODES));
     } else if(selectedMode == Mode::HOME){
       if (topLineIndex > 0) {
         topLineIndex--;
@@ -682,7 +726,7 @@ void handleInput() {
     }
   }
 
-  if (checkButtonDebounce(BUTTON_ENC, lastMenuState, lastDebounceTimeMenu)) {
+  if (checkButtonDebounce(BUTTON_ENC, lastEncState, lastDebounceTimeEnc, 50000)) {
     inEncoder = !inEncoder;
     if (inEncoder) {
       //FAZ
@@ -698,7 +742,7 @@ void drawMenu() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
-  display.println(getValor(displayConfig, "SELECTMODE"+idioma));
+  display.println(getValor(displayConfig, "SELECTMODE", idioma));
   display.setTextSize(2);
   display.setCursor(0, 20);
   display.println(getModeName(currentMode));
@@ -724,7 +768,7 @@ void drawScreen(Mode mode) {
   display.setCursor(0, 14);
 
   if (currentMode == Mode::RPM) {
-    display.print(getValor(displayConfig, "RPM_"+idioma+" "));
+    display.print(getValor(displayConfig, "RPM", idioma)+" ");
     display.print((int)rpmValue);
     display.setCursor(0, 26);
     display.print(msgTimer.isRunning() ? getValor(displayConfig, "RECRPM", idioma) : getValor(displayConfig, "SETRECRPM", idioma));
@@ -737,9 +781,8 @@ void drawScreen(Mode mode) {
     display.println(getValor(displayConfig, "ABOUTP2", idioma));
     display.println(getValor(displayConfig, "ABOUTP3", idioma));
     display.println(getValor(displayConfig, "ABOUTP4", idioma));
-    exibirImagemDaFlash(0x0041F, 32, 32, 90, 15);
-    display.setCursor(0, 56);
     display.println(getValor(displayConfig, "ABOUTSITE", idioma));
+    exibirImagemDaFlash(0x0041F, 32, 32, 90, 15);
   } else if (currentMode == Mode::TEST) {
     display.print(fpmTest.isRunning() ? getValor(displayConfig, "TESTING", idioma) : getValor(displayConfig, "TESTER", idioma));
     display.setCursor(0, 56);
