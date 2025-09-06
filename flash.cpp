@@ -94,7 +94,7 @@ void limparFlashParcial(uint32_t addrIni, uint32_t addrFim) {
   }
 }
 
-void exibirImagemDaFlash(
+/*void exibirImagemDaFlash(
   uint32_t enderecoInicial,
   int largura,
   int altura,
@@ -120,4 +120,4 @@ void exibirImagemDaFlash(
       }
     }
   }
-}
+}*/
