@@ -91,6 +91,8 @@ float rpmValue = 0;
 bool Lant_calc = false;
 bool TESTE_calc = false;
 float TESTE_fpm = 0;
+
+float FreqDeTest = 0;
 //-------------------------------------
 // Lista de mensagens
 String lines[] = {
@@ -122,8 +124,8 @@ int lineShowMsg = 5;
 struct TimerMicros {
   unsigned long start;
   unsigned long duration;
-  void startTimer(unsigned long d) {
-    duration = d;
+  void startTimer(int d) {
+    duration = d * 1000000UL;
     start = micros();
   }
   bool isExpired() {
@@ -385,7 +387,6 @@ void exibirImagemDaFlash(uint32_t enderecoInicial, int largura, int altura, int 
     }
   }
   display.display();
-  // Atualiza o display ao final
 }
 bool compararConfigs(const std::vector<Config> &a, const std::vector<Config> &b) {
   if (a.size() != b.size()) {
@@ -562,6 +563,7 @@ void loop() {
         {
           static unsigned long ultimoTempo = 0;
           static float fpmAtual = 30.0;
+          FreqDeTest = fpmAtual/60;
           static const float passo = 30.0;
           static const unsigned long intervaloTeste = 100;  // 2 segundos entre testes
           unsigned long agora = millis();
@@ -570,6 +572,7 @@ void loop() {
               TESTE_fpm = fpmAtual;
               updateValues();
               fpmAtual += passo;
+              FreqDeTest = fpmAtual/60;
               if (fpmAtual >= maxFPM) {
                 fpmAtual = 30.0;  // reinicia o ciclo
               }
@@ -577,6 +580,7 @@ void loop() {
             }
           } else if (fpmTest.isExpired()) {
             fpmAtual = 30;
+            FreqDeTest = fpmAtual/60;
             STB_outputEnabled = false;
             TESTE_calc = false;
           } else {
@@ -609,19 +613,14 @@ void loop() {
   // nada aqui
 }
 void handleInput() {
-  // Variáveis separadas para o botão MENU
   static bool lastMenuState = HIGH;
   static unsigned long lastDebounceTimeMenu = 0;
-  // Variáveis separadas para o botão SET
   static bool lastSetState = HIGH;
   static unsigned long lastDebounceTimeSet = 0;
-  // Variáveis separadas para o botão DOUBLE
   static bool lastDoubleState = HIGH;
   static unsigned long lastDebounceTimeDouble = 0;
-  // Variáveis separadas para o botão HALF
   static bool lastHalfState = HIGH;
   static unsigned long lastDebounceTimeHalf = 0;
-  // Variáveis separadas para o botão ENC
   static bool lastEncState = HIGH;
   static unsigned long lastDebounceTimeEnc = 0;
   if (checkButtonDebounce(BUTTON_MENU, lastMenuState, lastDebounceTimeMenu, 50000)) {
@@ -670,14 +669,6 @@ void handleInput() {
           case VibroState::VIBRO_HOME:
             vibroState = VibroState::VIBRO_CALIB;
             break;
-          /*case VibroState::VIBRO_CALIB: 
-startCalibration(timeCalib); //10 segundos 
-setValor(dadosConfig, "TIMECALIB", String(timeCalib)); 
-break; 
-case VibroState::VIBRO_IDLE: 
-startMeasurement(timeMeasure); //10 segundos 
-setValor(dadosConfig, "TIMEMEASURE", String(timeMeasure)); 
-break;*/
           case VibroState::VIBRO_CONFIG:
             //vibroState = VibroState::VIBRO_MEASURE;
             //measureSeismicActivity();
@@ -703,7 +694,7 @@ break;*/
       } else if (selectedMode == Mode::TEST) {
         STB_outputEnabled = true;
         TESTE_calc = true;
-        fpmTest.startTimer(10);
+        fpmTest.startTimer(15);
       } else if (selectedMode == Mode::LANTERN || currentMode == Mode::ABOUT) {
         inSubmenu = false;
       } else {
@@ -817,6 +808,8 @@ void drawScreen(Mode mode) {
     exibirImagemDaFlash(0x0041F, 32, 32, 90, 15);
   } else if (currentMode == Mode::TEST) {
     display.print(fpmTest.isRunning() ? getValor(displayConfig, "TESTING", idioma) : getValor(displayConfig, "TESTER", idioma));
+    display.setCursor(45, 19);
+    display.println(FreqDeTest);
     display.setCursor(0, 56);
     display.println(fpmTest.isRunning() ? getValor(displayConfig, "TESTWAIT", idioma) : getValor(displayConfig, "TESTSET", idioma));
   } else if (currentMode == Mode::LANTERN) {
