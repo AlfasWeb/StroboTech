@@ -16,6 +16,7 @@
 #define BUTTON_DOUBLE 27
 #define BUTTON_HALF   26
 #define BUTTON_ENC    17
+#define ONOFF         14
 #define LED_PIN       2        // Pino do LED de alta potência para o estroboscópio/lanterna
 #define SENSOR_IR_PIN 4  // Pino do sensor infravermelho para medição de RPM
 /* 
@@ -426,6 +427,9 @@ void setupButtons() {
   pinMode(BUTTON_ENC, INPUT_PULLUP);
 }
 void setup() {
+  // Inicializa o pino de ligar o aparelho
+  pinMode(ONOFF, OUTPUT);
+  digitalWrite(ONOFF, HIGH);
   // Inicializa o pino do LED
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
@@ -438,8 +442,7 @@ void setup() {
   // SDA = 21, SCL = 22
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println(F("Falha ao iniciar OLED"));
-    while (true)
-      ;
+    while (true);
   }
   display.clearDisplay();
   adxlAvailable = accel.begin();
@@ -805,7 +808,7 @@ void drawScreen(Mode mode) {
     display.println(getValor(displayConfig, "ABOUTP3", idioma));
     display.println(getValor(displayConfig, "ABOUTP4", idioma));
     display.println(getValor(displayConfig, "ABOUTSITE", idioma));
-    exibirImagemDaFlash(0x0041F, 32, 32, 90, 15);
+    exibirImagemDaFlash(0x0063E, 32, 32, 90, 15);
   } else if (currentMode == Mode::TEST) {
     display.print(fpmTest.isRunning() ? getValor(displayConfig, "TESTING", idioma) : getValor(displayConfig, "TESTER", idioma));
     display.setCursor(45, 19);
