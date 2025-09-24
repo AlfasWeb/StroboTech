@@ -8,6 +8,7 @@
 #define ENCODER_DO_NOT_USE_INTERRUPTS
 #include <Encoder.h>
 #include <arduinoFFT.h>
+#include "soc/gpio_struct.h"
 // ==== Pinos ====
 #define ENCODER_PIN_A 33
 #define ENCODER_PIN_B 32
@@ -55,6 +56,8 @@ Mode selectedMode = Mode::HOME;
 bool inMenu = true;
 bool inSubmenu = false;
 bool inEncoder = false;
+int valInEncoder = 0;
+int modeFreq = 0;
 // ==== Variáveis do Vibrometro ====
 enum class VibroState { VIBRO_HOME,
                         VIBRO_IDLE,
@@ -88,10 +91,6 @@ unsigned long ultimaLeitura = 0;
 int contagemPulsos = 0;
 bool estadoAnterior = LOW;
 float rpmValue = 0;
-// Valor de RPM calculado
-bool Lant_calc = false;
-bool TESTE_calc = false;
-float TESTE_fpm = 0;
 
 float FreqDeTest = 0;
 //-------------------------------------
@@ -146,8 +145,26 @@ int numIdioma = 1;
 String idioma = "PT";
 bool saveData = false;
 // ==============
+//Encoder
+long lastEncoderPos = 0;
+float phaseDegrees = 0.0;
+// ==== TESTE ====
+bool Lant_calc = false;
+bool TESTE_calc = false;
+float TESTE_fpm = 0;
+
+// ==== FIM TESTE ====
 // ==== Variáveis do Modo Estroboscópio ====
-float fpm = 300;  // Valor inicial de FPM
+int fpm = 683;
+const int minFPM = 30; // Limite mínimo de FPM
+const int maxFPM = 35000; // Limite máximo de FPM
+
+int dutyCycle = 4;
+const int minDuty = 1;
+const int maxDuty = 100;
+
+// ==== STROBOSCOPIO ==== //
+// ==== Variáveis do Modo Estroboscópio ====
 long STB_lastEncoderPos = 0;
 float STB_phaseDegrees = 0.0;
 // Ajuste de fase em graus
@@ -164,53 +181,62 @@ bool STB_outputEnabled = false;
 hw_timer_t *timer = NULL;
 portMUX_TYPE STB_timerMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool STB_pulseState = false;
-const int minFPM = 30;
-// Limite mínimo de FPM
-const int maxFPM = 40000;
-// Limite máximo de FPM
+
+volatile unsigned long STB_timeHigh = 0;
+volatile unsigned long STB_timeLow  = 0;
 // ==== Função de interrupção do timer. Alterna o estado do LED e aplica o atraso de fase na primeira chamada. ====
 void IRAM_ATTR onTimer() {
-  static bool phaseApplied = false;
-  portENTER_CRITICAL_ISR(&STB_timerMux);
-  if (!STB_outputEnabled) {
-    digitalWrite(LED_PIN, LOW);
-    portEXIT_CRITICAL_ISR(&STB_timerMux);
-    return;
-  }
-  if (STB_firstPulse && !phaseApplied && STB_phaseDelayMicros > 0) {
-    timerAlarm(timer, STB_phaseDelayMicros, true, 0);
-    // Atraso de fase
-    phaseApplied = true;
-  } else {
+    portENTER_CRITICAL_ISR(&STB_timerMux);
+
+    if (!STB_outputEnabled) {
+        digitalWrite(LED_PIN, LOW);
+        portEXIT_CRITICAL_ISR(&STB_timerMux);
+        return;
+    }
+
+    // Aplica fase apenas no primeiro pulso
+    if (STB_firstPulse && STB_phaseDelayMicros > 0) {
+        timerAlarm(timer, STB_phaseDelayMicros, true, 0);
+        STB_firstPulse = false;
+        portEXIT_CRITICAL_ISR(&STB_timerMux);
+        return;
+    }
+
+    // Alterna o LED
     STB_pulseState = !STB_pulseState;
     digitalWrite(LED_PIN, STB_pulseState);
-    timerAlarm(timer, STB_partTime, true, 0);
-    // Próximo intervalo
-    STB_firstPulse = false;
-    phaseApplied = false;
-  }
-  portEXIT_CRITICAL_ISR(&STB_timerMux);
+
+    // Define próximo intervalo: HIGH ou LOW
+    unsigned long nextInterval = STB_pulseState ? STB_timeHigh : STB_timeLow;
+    timerAlarm(timer, nextInterval, true, 0);
+
+    portEXIT_CRITICAL_ISR(&STB_timerMux);
 }
 // Atualiza os valores com base na entrada de FPM. Recalcula os tempos de ciclo e atraso de fase.
 void updateValues() {
-  if (STB_calc) {
+    // Tempo total de ciclo em microssegundos (um ciclo completo do FPM)
     unsigned long cycleTimeMicros = 60000000UL / fpm;
-    STB_partTime = cycleTimeMicros / 2;
-    STB_phaseDelayMicros = (STB_phaseDegrees / 360.0) * cycleTimeMicros;
+    if (Lant_calc) {
+      cycleTimeMicros = 60000000UL / 7200;
+    } else if (TESTE_calc) {
+      cycleTimeMicros = 60000000UL / TESTE_fpm;
+    }
+    // Duty mínimo de 1% para flashes curtos
+    float dutyFraction = (dutyCycle < 1) ? 0.01f : ((float)dutyCycle / 100.0f);
+
+    // Calcula tempo de HIGH e LOW do LED
+    STB_timeHigh = cycleTimeMicros * dutyFraction;
+    STB_timeLow  = cycleTimeMicros - STB_timeHigh;
+
+    // Calcula o atraso de fase
+    STB_phaseDelayMicros = (STB_phaseDegrees / 360.0f) * cycleTimeMicros;
+
+    // Prepara para o primeiro pulso
     STB_firstPulse = true;
     STB_calc = false;
-  } else if (Lant_calc) {
-    unsigned long cycleTimeMicros = 60000000UL / 7200;
-    STB_partTime = cycleTimeMicros / 2;
-    STB_phaseDelayMicros = (STB_phaseDegrees / 360.0) * cycleTimeMicros;
-    STB_firstPulse = true;
-  } else if (TESTE_calc) {
-    unsigned long cycleTimeMicros = 60000000UL / TESTE_fpm;
-    STB_partTime = cycleTimeMicros / 2;
-    STB_phaseDelayMicros = (STB_phaseDegrees / 360.0) * cycleTimeMicros;
-    STB_firstPulse = true;
-  }
 }
+// Fim Stroboscópio
+
 // ==== Ajusta o FPM multiplicando-o por um fator ====
 void adjustFPM(float factor) {
   fpm = constrain(fpm * factor, minFPM, maxFPM);
@@ -241,6 +267,7 @@ void startCalibration(int durationSeconds) {
   vibroState = VibroState::VIBRO_CALIB;
   Serial.println("Iniciando calibração...");
 }
+
 void updateCalibration() {
   if (!isCalibrating) return;
   unsigned long now = millis();
@@ -448,12 +475,8 @@ void setup() {
   adxlAvailable = accel.begin();
   if (adxlAvailable) accel.setRange(ADXL345_RANGE_4_G);
   // Inicializa o timer com resolução de 1us (1MHz)
-  timer = timerBegin(1000000);
-  timerAttachInterrupt(timer, onTimer);
-  timerAlarm(timer, STB_partTime, true, 0);
   Serial.begin(115200);
-  while (!Serial)
-    ;
+  while (!Serial);
   iniciarSPIFlash();
   identificarJEDEC();
   exibirImagemDaFlash(0x00000, 128, 64, 0, 0);
@@ -466,7 +489,8 @@ void setup() {
     setValor(dadosConfig, "IDIOMA", "1");
     setValor(dadosConfig, "TIMEMEASURE", "30");
     setValor(dadosConfig, "TIMECALIB", "10");
-    setValor(dadosConfig, "FPM", "3000");
+    setValor(dadosConfig, "FPM", "1200");
+    setValor(dadosConfig, "DUTY", "4");
     // Salva os valores padrão na EEPROM
     salvarDadosEEPROM(dadosConfig);
   } else {
@@ -479,24 +503,35 @@ void setup() {
   timeMeasure = getValor(dadosConfig, "TIMEMEASURE").toInt();
   timeCalib = getValor(dadosConfig, "TIMECALIB").toInt();
   fpm = getValor(dadosConfig, "FPM").toInt();
+  dutyCycle = getValor(dadosConfig, "DUTY").toInt();
+
   delay(1000);
   carregarArquivoParcial(displayConfig, 0x006DD, 0x001FFF, idioma);
   delay(1000);
   display.clearDisplay();
+
+  //Stroboscópio
+  // Inicializa o timer com resolução de 1us (1MHz)
+  timer = timerBegin(1000000);
+  timerAttachInterrupt(timer, onTimer);
+  timerAlarm(timer, STB_partTime, true, 0);
 }
 void loop() {
   handleInput();
-  updateValues();  //Stroboscópio fica com a função rodando, mas não executa os leds. Apenas os contadores do timer.
+  //==== STROBOSCOPIO ====
+  updateValues();
+  //==== FIM STROBOSCOPIO ====
+
   if (adxlAvailable) {
     updateMeasurement();
     updateCalibration();
   }
   if (inMenu) {
     drawMenu();
-    STB_outputEnabled = false;
-    TESTE_calc = false;
-    Lant_calc = false;
     vibroState = VibroState::VIBRO_HOME;
+    digitalWrite(LED_PIN, LOW);
+    STB_outputEnabled = false;
+    modeFreq = 0;
     // === Lógica do Encoder para navegação do menu principal ===
     static long lastEncoderPosition = 0;
     long newPosition = encoder.read() / 8;  // Ajuste o divisor para a sensibilidade que preferir
@@ -516,26 +551,36 @@ void loop() {
     switch (selectedMode) {
       case Mode::FREQUENCY:
         {
-          STB_outputEnabled = true;
           //Comandos para alterar o valor usando o Encoder
           long newPos = encoder.read() / 8;
+          STB_calc = true;
           // Dividido por 8 para reduzir sensibilidade
-          if (inSubmenu) {
-            int delta = newPos - STB_lastEncoderPos;
-            STB_phaseDegrees = constrain(STB_phaseDegrees + delta, 0, 359);
-            STB_lastEncoderPos = newPos;
-            saveData = setValor(dadosConfig, "FPM", String(fpm));
-            STB_calc = true;
-          } else if (!inSubmenu) {
-            int delta = newPos - STB_lastEncoderPos;
-            if (inEncoder) {
+          if (modeFreq == 1) {
+            int delta = newPos - lastEncoderPos;
+            phaseDegrees = constrain(phaseDegrees + delta, 0, 359);
+            lastEncoderPos = newPos;
+          } else if (modeFreq == 2) {
+            int delta = newPos - lastEncoderPos;
+            dutyCycle = constrain(dutyCycle + delta, minDuty, maxDuty);
+            lastEncoderPos = newPos;
+            setValor(dadosConfig, "DUTY", String(dutyCycle));
+          }else{
+            int delta = newPos - lastEncoderPos;
+            if (valInEncoder==1) {
               delta = delta * 10;
+            } else if(valInEncoder==2){
+              delta = delta * 100;
             }
-            fpm = constrain(fpm + delta, minFPM, maxFPM);
-            STB_lastEncoderPos = newPos;
-            saveData = setValor(dadosConfig, "FPM", String(fpm));
-            STB_calc = true;
+            if(lastEncoderPos != newPos){
+              fpm = constrain(fpm + delta, minFPM, maxFPM);
+              lastEncoderPos = newPos;
+            }
+            setValor(dadosConfig, "FPM", String(fpm));
           }
+          //==== Strobo ====          
+          STB_outputEnabled = true;
+          
+          //=== Fim strobo
           break;
         }
       case Mode::RPM:
@@ -559,11 +604,10 @@ void loop() {
           break;
         }
       case Mode::LANTERN:
-        STB_outputEnabled = true;
-        Lant_calc = true;
+        digitalWrite(LED_PIN, HIGH);
         break;
       case Mode::TEST:
-        {
+        { 
           static unsigned long ultimoTempo = 0;
           static float fpmAtual = 30.0;
           FreqDeTest = fpmAtual/60;
@@ -594,7 +638,7 @@ void loop() {
         }
       case Mode::HOME:
         {
-          static long lastEncoderPos = 0;
+          lastEncoderPos = 0;
           long newPos = encoder.read() / 8;
           if (newPos != lastEncoderPos) {
             int delta = newPos - lastEncoderPos;
@@ -613,7 +657,6 @@ void loop() {
         }
     }
   }
-  // nada aqui
 }
 void handleInput() {
   static bool lastMenuState = HIGH;
@@ -646,7 +689,7 @@ void handleInput() {
     } else {
       if (selectedMode == Mode::VIBROMETER) {
         // === Lógica do Encoder para ajustar o tempo ===
-        static long lastEncoderPos = 0;
+        lastEncoderPos = 0;
         long newPos = encoder.read() / 8;  // Lê a posição e reduz a sensibilidade
         if (newPos != lastEncoderPos) {
           int delta = newPos - lastEncoderPos;
@@ -686,6 +729,11 @@ void handleInput() {
             // Não faz nada em outros estados do vibrometro
             break;
         }
+      } else if (selectedMode == Mode::FREQUENCY){
+        modeFreq++;
+        if (modeFreq >=3) {
+          modeFreq = 0;
+        }
       } else if (selectedMode == Mode::RPM) {
         inSubmenu = false;
         if (rpmValue >= 30) {
@@ -695,14 +743,15 @@ void handleInput() {
           msgTimer.startTimer(2);  //Inicia a contagem para exibir a mensagem de gravando por 2 segundos
         }
       } else if (selectedMode == Mode::TEST) {
-        STB_outputEnabled = true;
-        TESTE_calc = true;
         fpmTest.startTimer(15);
+        modeFreq++;
+        if (modeFreq >=3) {
+          modeFreq = 0;
+        }
       } else if (selectedMode == Mode::LANTERN || currentMode == Mode::ABOUT) {
         inSubmenu = false;
       } else {
         inSubmenu = !inSubmenu;
-        STB_outputEnabled = false;
       }
     }
   }
@@ -723,7 +772,6 @@ void handleInput() {
     } else {
       if (selectedMode == Mode::FREQUENCY && !inSubmenu) {
         adjustFPM(0.5);
-        STB_calc = true;
       }
     }
   }
@@ -744,16 +792,14 @@ void handleInput() {
     } else {
       if (selectedMode == Mode::FREQUENCY && !inSubmenu) {
         adjustFPM(2.0);
-        STB_calc = true;
       }
     }
   }
   if (checkButtonDebounce(BUTTON_ENC, lastEncState, lastDebounceTimeEnc, 50000)) {
     inEncoder = !inEncoder;
-    if (inEncoder) {
-      //FAZ
-    } else {
-      //NÃO FAZ
+    valInEncoder++;
+    if (valInEncoder >=3) {
+      valInEncoder = 0;
     }
   }
 }
@@ -829,18 +875,27 @@ void drawScreen(Mode mode) {
     display.setTextSize(1);
     display.setCursor(70, 22);
     display.print(getValor(displayConfig, "FPM", idioma));
+    if (modeFreq == 0) { 
+      display.setCursor(95, 22);
+      display.print("<");
+    }
     display.setCursor(0, 34);
-    display.print(getValor(displayConfig, "HZ", idioma) + "");
+    display.print(getValor(displayConfig, "HZ", idioma) + ": ");
     display.print(fpm / 60.0, 2);
     display.setCursor(0, 46);
     display.print(getValor(displayConfig, "PHASE", idioma) + " ");
-    display.print(STB_phaseDegrees);
-    display.print((char)247);
-    if (inSubmenu) {
-      display.setCursor(80, 46);
-      display.println("<");
-      display.setCursor(0, 56);
-      display.println(getValor(displayConfig, "PHASEEDIT", idioma));
+    display.print(phaseDegrees);
+    display.println((char)247);
+    if (modeFreq == 1) { 
+      display.setCursor(95, 46);
+      display.print("<");
+    }
+    display.setCursor(0, 56);
+    display.print("Duty: ");
+    display.print(dutyCycle);
+    if (modeFreq == 2) { 
+      display.setCursor(95, 56);
+      display.print("<");
     }
   } else if (currentMode == Mode::VIBROMETER) {
     if (adxlAvailable) {
