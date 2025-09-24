@@ -679,6 +679,7 @@ void handleInput() {
       inMenu = true;
       updateValuesRec();
     } else {
+      currentMode = selectedMode;
       //currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % static_cast<int>(Mode::NUM_MODES));
     }
   }
