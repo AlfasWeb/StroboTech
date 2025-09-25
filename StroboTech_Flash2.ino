@@ -107,13 +107,13 @@ String lines[] = {
   "",
   "Nossos professores:",
   "Evandro Padilha",
-  "Renato",
+  "Renato L. Cruz",
   "Vitor Santarosa",
   "Alex Penteado",
-  "Bruno",
-  "Fernando",
+  "Bruno de Campos",
+  "Fernando A. Bosco",
   "Fabio Camarinha",
-  "Gabriela"
+  "Gabriela Viana"
 };
 const int totalLines = sizeof(lines) / sizeof(lines[0]);
 int topLineIndex = 0;
