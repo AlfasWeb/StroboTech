@@ -120,7 +120,7 @@ String lines[] = {
 const int totalLines = sizeof(lines) / sizeof(lines[0]);
 int topLineIndex = 0;
 // Índice da linha superior visível
-int lineShowMsg = 5;
+int lineShowMsg = 6;
 // ==============
 // ==== Temporizador ====
 struct TimerMicros {
@@ -151,7 +151,7 @@ bool saveData = false;
 long lastEncoderPos = 0;
 float phaseDegrees = 0.0;
 // ==== TESTE ====
-bool Lant_calc = false;
+bool lanterna = false;
 bool TESTE_calc = false;
 float TESTE_fpm = 0;
 
@@ -220,27 +220,24 @@ void IRAM_ATTR onTimer() {
 }
 // Atualiza os valores com base na entrada de FPM. Recalcula os tempos de ciclo e atraso de fase.
 void updateValues() {
-    // Tempo total de ciclo em microssegundos (um ciclo completo do FPM)
-    unsigned long cycleTimeMicros = 60000000UL / fpm;
-    if (Lant_calc) {
-      cycleTimeMicros = 60000000UL / 7200;
-      dutyCycle = 50;
-    } else if (TESTE_calc) {
-      cycleTimeMicros = 60000000UL / TESTE_fpm;
-    }
-    // Duty mínimo de 1% para flashes curtos
-    float dutyFraction = (dutyCycle < 1) ? 0.01f : ((float)dutyCycle / 100.0f);
+  // Tempo total de ciclo em microssegundos (um ciclo completo do FPM)
+  unsigned long cycleTimeMicros = 60000000UL / fpm;
+  if (TESTE_calc) {
+    cycleTimeMicros = 60000000UL / TESTE_fpm;
+  }
+  // Duty mínimo de 1% para flashes curtos
+  float dutyFraction = (dutyCycle < 1) ? 0.01f : ((float)dutyCycle / 100.0f);
 
-    // Calcula tempo de HIGH e LOW do LED
-    STB_timeHigh = cycleTimeMicros * dutyFraction;
-    STB_timeLow  = cycleTimeMicros - STB_timeHigh;
+  // Calcula tempo de HIGH e LOW do LED
+  STB_timeHigh = cycleTimeMicros * dutyFraction;
+  STB_timeLow  = cycleTimeMicros - STB_timeHigh;
 
-    // Calcula o atraso de fase
-    STB_phaseDelayMicros = (STB_phaseDegrees / 360.0f) * cycleTimeMicros;
+  // Calcula o atraso de fase
+  STB_phaseDelayMicros = (STB_phaseDegrees / 360.0f) * cycleTimeMicros;
 
-    // Prepara para o primeiro pulso
-    STB_firstPulse = true;
-    STB_calc = false;
+  // Prepara para o primeiro pulso
+  STB_firstPulse = true;
+  STB_calc = false;
 }
 // Fim Stroboscópio
 
@@ -535,7 +532,9 @@ void setup() {
 void loop() {
   handleInput();
   //==== STROBOSCOPIO ====
-  updateValues();
+  if (STB_calc) {
+    updateValues();
+  }
   //==== FIM STROBOSCOPIO ====
 
   if (adxlAvailable) {
@@ -545,9 +544,19 @@ void loop() {
   if (inMenu) {
     drawMenu();
     vibroState = VibroState::VIBRO_HOME;
-    digitalWrite(LED_PIN, LOW);
+
+    //==== STROBOSCOPIO ====
+    if(lanterna){
+      timer = timerBegin(1000000);
+      timerAttachInterrupt(timer, onTimer);
+      timerAlarm(timer, STB_partTime, true, 0);
+      lanterna = false;
+    }
+    GPIO.out_w1tc = (1 << LED_PIN); //LOW
     STB_outputEnabled = false;
     modeFreq = 0;
+    //==== FIM STROBOSCOPIO ====
+
     // === Lógica do Encoder para navegação do menu principal ===
     static long lastEncoderPosition = 0;
     long newPosition = encoder.read() / 8;  // Ajuste o divisor para a sensibilidade que preferir
@@ -568,35 +577,35 @@ void loop() {
       case Mode::FREQUENCY:
         {
           //Comandos para alterar o valor usando o Encoder
+          STB_outputEnabled = true;
           long newPos = encoder.read() / 8;
-          STB_calc = true;
           // Dividido por 8 para reduzir sensibilidade
           if (modeFreq == 1) {
             int delta = newPos - lastEncoderPos;
-            phaseDegrees = constrain(phaseDegrees + delta, 0, 359);
-            lastEncoderPos = newPos;
+            if (delta != 0) {
+                phaseDegrees = constrain(phaseDegrees + delta, 0, 359);
+                lastEncoderPos = newPos;
+                STB_calc = true;  // só recalcula se mexeu
+            }
           } else if (modeFreq == 2) {
             int delta = newPos - lastEncoderPos;
-            dutyCycle = constrain(dutyCycle + delta, minDuty, maxDuty);
-            lastEncoderPos = newPos;
-            setValor(dadosConfig, "DUTY", String(dutyCycle));
+            if (delta != 0) {
+                dutyCycle = constrain(dutyCycle + delta, minDuty, maxDuty);
+                lastEncoderPos = newPos;
+                setValor(dadosConfig, "DUTY", String(dutyCycle));
+                STB_calc = true;
+            }
           }else{
             int delta = newPos - lastEncoderPos;
-            if (valInEncoder==1) {
-              delta = delta * 10;
-            } else if(valInEncoder==2){
-              delta = delta * 100;
+            if (valInEncoder == 1) delta *= 10;
+            else if (valInEncoder == 2) delta *= 100;
+            if (delta != 0) {
+                fpm = constrain(fpm + delta, minFPM, maxFPM);
+                lastEncoderPos = newPos;
+                setValor(dadosConfig, "FPM", String(fpm));
+                STB_calc = true;
             }
-            if(lastEncoderPos != newPos){
-              fpm = constrain(fpm + delta, minFPM, maxFPM);
-              lastEncoderPos = newPos;
-            }
-            setValor(dadosConfig, "FPM", String(fpm));
           }
-          //==== Strobo ====          
-          STB_outputEnabled = true;
-          
-          //=== Fim strobo
           break;
         }
       case Mode::RPM:
@@ -620,7 +629,11 @@ void loop() {
           break;
         }
       case Mode::LANTERN:
-        digitalWrite(LED_PIN, HIGH);
+        lanterna = true;
+        STB_outputEnabled = false;         // flag de segurança
+        timerDetachInterrupt(timer);       // desliga o timer (não chama mais a ISR)
+        dutyCycle = 100;                   // força duty a 100%
+        GPIO.out_w1ts = (1 << LED_PIN);    // mantém LED aceso fixo
         break;
       case Mode::TEST:
         { 
@@ -654,9 +667,9 @@ void loop() {
         }
       case Mode::HOME:
         {
-          lastEncoderPos = 0;
           long newPos = encoder.read() / 8;
-          if (newPos != lastEncoderPos) {
+          int delta = newPos - lastEncoderPos;
+          if (delta != 0) {
             int delta = newPos - lastEncoderPos;
             if (delta > 0) {  // Girando para a frente
               if (topLineIndex < totalLines - lineShowMsg) {
@@ -850,7 +863,7 @@ void drawScreen(Mode mode) {
   display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
   display.setCursor(0, 14);
   if (currentMode == Mode::HOME) {
-    display.println("Agradecimentos: ");
+    //display.println("Agradecimentos: ");
     for (int i = 0; i < lineShowMsg; i++) {
       int lineIndex = topLineIndex + i;
       if (lineIndex < totalLines) {
