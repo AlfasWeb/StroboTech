@@ -9,6 +9,8 @@
 #include <Encoder.h>
 #include <arduinoFFT.h>
 #include "soc/gpio_struct.h"
+#include "driver/gpio.h"
+
 // ==== Pinos ====
 #define ENCODER_PIN_A 33
 #define ENCODER_PIN_B 32
@@ -189,7 +191,7 @@ void IRAM_ATTR onTimer() {
     portENTER_CRITICAL_ISR(&STB_timerMux);
 
     if (!STB_outputEnabled) {
-        digitalWrite(LED_PIN, LOW);
+        GPIO.out_w1tc = (1 << LED_PIN);  // Força LOW
         portEXIT_CRITICAL_ISR(&STB_timerMux);
         return;
     }
@@ -204,7 +206,11 @@ void IRAM_ATTR onTimer() {
 
     // Alterna o LED
     STB_pulseState = !STB_pulseState;
-    digitalWrite(LED_PIN, STB_pulseState);
+    if (STB_pulseState) {
+        GPIO.out_w1ts = (1 << LED_PIN);  // HIGH
+    } else {
+        GPIO.out_w1tc = (1 << LED_PIN);  // LOW
+    }
 
     // Define próximo intervalo: HIGH ou LOW
     unsigned long nextInterval = STB_pulseState ? STB_timeHigh : STB_timeLow;
@@ -218,6 +224,7 @@ void updateValues() {
     unsigned long cycleTimeMicros = 60000000UL / fpm;
     if (Lant_calc) {
       cycleTimeMicros = 60000000UL / 7200;
+      dutyCycle = 50;
     } else if (TESTE_calc) {
       cycleTimeMicros = 60000000UL / TESTE_fpm;
     }
@@ -457,9 +464,18 @@ void setup() {
   // Inicializa o pino de ligar o aparelho
   pinMode(ONOFF, OUTPUT);
   digitalWrite(ONOFF, HIGH);
-  // Inicializa o pino do LED
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+  // Configuração do pino LED como saída
+  gpio_config_t io_conf = {};
+  io_conf.intr_type = GPIO_INTR_DISABLE;     // sem interrupção
+  io_conf.mode = GPIO_MODE_OUTPUT;           // saída
+  io_conf.pin_bit_mask = (1ULL << LED_PIN);  // seleciona o pino
+  io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+  io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+  gpio_config(&io_conf);
+
+  // Garante que comece apagado
+  GPIO.out_w1tc = (1 << LED_PIN);
+      
   // Inicializa o pino do sensor IR
   pinMode(SENSOR_IR_PIN, INPUT);
   setupButtons();
