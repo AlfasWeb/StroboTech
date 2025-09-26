@@ -554,6 +554,7 @@ void loop() {
     GPIO.out_w1tc = (1 << LED_PIN); //LOW
     STB_outputEnabled = false;
     modeFreq = 0;
+    STB_phaseDegrees = 0;
     //==== FIM STROBOSCOPIO ====
 
     // === Lógica do Encoder para navegação do menu principal ===
@@ -583,15 +584,7 @@ void loop() {
           STB_outputEnabled = true;
           long newPos = encoder.read() / 8;
           // Dividido por 8 para reduzir sensibilidade
-          if (modeFreq == 1) {
-            /*
-            int delta = newPos - lastEncoderPos;
-            if (delta != 0) {
-                phaseDegrees = constrain(phaseDegrees + delta, 0, 359);
-                lastEncoderPos = newPos;
-                STB_calc = true;  // só recalcula se mexeu
-            }
-            */
+          /*if (modeFreq == 1) {
             int delta = newPos - lastEncoderPos;
             if (delta != 0) {
                 // Atualiza fase em 1 grau por tick
@@ -613,6 +606,36 @@ void loop() {
                 STB_firstPulse = true; // garante que a fase seja aplicada no próximo pulso
                 portEXIT_CRITICAL(&STB_timerMux);
             }
+          }*/
+          if (modeFreq == 1) {
+            long newPos = encoder.read() / 8;  // reduz sensibilidade
+            int delta = newPos - lastEncoderPos;
+
+            if (delta != 0) {
+              // Atualiza fase em 1 grau por tick
+              if (delta > 0) {
+                  STB_phaseDegrees = (STB_phaseDegrees + 1) % 360;
+              } else {
+                  STB_phaseDegrees--;
+                  if (STB_phaseDegrees < 0) STB_phaseDegrees += 360;
+              }
+
+              lastEncoderPos = newPos;
+
+              // Recalcula tempos do estroboscópio
+              STB_calc = true;
+              updateValues(); // força atualização imediata
+
+              // Aplica fase imediatamente no próximo pulso
+              portENTER_CRITICAL(&STB_timerMux);
+              STB_firstPulse = true;  // sinaliza que a fase deve ser aplicada
+              timerStop(timer);       // pausa temporariamente o timer
+              timerWrite(timer, 0);   // reseta o contador
+              timerAttachInterrupt(timer, onTimer); // reconecta a ISR (compatível 3.3.1)
+              timerStart(timer);      // reinicia o timer
+              STB_outputEnabled = true; // garante saída ativa
+              portEXIT_CRITICAL(&STB_timerMux);
+          }
           } else if (modeFreq == 2) {
             int delta = newPos - lastEncoderPos;
             if (delta != 0) {
