@@ -635,36 +635,40 @@ void loop() {
         dutyCycle = 100;                   // força duty a 100%
         GPIO.out_w1ts = (1 << LED_PIN);    // mantém LED aceso fixo
         break;
-      case Mode::TEST:
-        { 
-          static unsigned long ultimoTempo = 0;
-          static float fpmAtual = 30.0;
-          FreqDeTest = fpmAtual/60;
-          static const float passo = 30.0;
-          static const unsigned long intervaloTeste = 100;  // 2 segundos entre testes
-          unsigned long agora = millis();
-          if (fpmTest.isRunning()) {
+      case Mode::TEST: {
+        static unsigned long ultimoTempo = 0;
+        static float fpmAtual = 30.0;
+        static const float passo = 30.0;
+        static const unsigned long intervaloTeste = 500;  // 2 segundos entre passos
+
+        unsigned long agora = millis();
+
+        if (fpmTest.isRunning()) {
             if (agora - ultimoTempo >= intervaloTeste) {
-              TESTE_fpm = fpmAtual;
-              updateValues();
-              fpmAtual += passo;
-              FreqDeTest = fpmAtual/60;
-              if (fpmAtual >= maxFPM) {
-                fpmAtual = 30.0;  // reinicia o ciclo
-              }
-              ultimoTempo = agora;
+                TESTE_fpm = fpmAtual;
+                TESTE_calc = true;        // <<< Ativa cálculo com TESTE_fpm
+                updateValues();
+
+                fpmAtual += passo;
+                FreqDeTest = fpmAtual / 60.0;
+
+                if (fpmAtual >= maxFPM) {
+                    fpmAtual = 30.0;      // reinicia ciclo
+                }
+                ultimoTempo = agora;
             }
-          } else if (fpmTest.isExpired()) {
-            fpmAtual = 30;
-            FreqDeTest = fpmAtual/60;
+            STB_outputEnabled = true;     // <<< Mantém LED rodando
+        } else if (fpmTest.isExpired()) {
+            fpmAtual = 30.0;
+            FreqDeTest = fpmAtual / 60.0;
             STB_outputEnabled = false;
             TESTE_calc = false;
-          } else {
+        } else {
             STB_outputEnabled = false;
             TESTE_calc = false;
-          }
-          break;
         }
+        break;
+    }
       case Mode::HOME:
         {
           long newPos = encoder.read() / 8;
@@ -773,7 +777,7 @@ void handleInput() {
           msgTimer.startTimer(2);  //Inicia a contagem para exibir a mensagem de gravando por 2 segundos
         }
       } else if (selectedMode == Mode::TEST) {
-        fpmTest.startTimer(15);
+        fpmTest.startTimer(25);
         modeFreq++;
         if (modeFreq >=3) {
           modeFreq = 0;
