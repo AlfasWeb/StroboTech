@@ -149,7 +149,6 @@ bool saveData = false;
 // ==============
 //Encoder
 long lastEncoderPos = 0;
-float phaseDegrees = 0.0;
 // ==== TESTE ====
 bool lanterna = false;
 bool TESTE_calc = false;
@@ -168,7 +167,7 @@ const int maxDuty = 100;
 // ==== STROBOSCOPIO ==== //
 // ==== Variáveis do Modo Estroboscópio ====
 long STB_lastEncoderPos = 0;
-float STB_phaseDegrees = 0.0;
+int STB_phaseDegrees = 0;
 // Ajuste de fase em graus
 unsigned long STB_partTime = 1000000;
 // Duração de meio ciclo em microssegundos
@@ -585,11 +584,34 @@ void loop() {
           long newPos = encoder.read() / 8;
           // Dividido por 8 para reduzir sensibilidade
           if (modeFreq == 1) {
+            /*
             int delta = newPos - lastEncoderPos;
             if (delta != 0) {
                 phaseDegrees = constrain(phaseDegrees + delta, 0, 359);
                 lastEncoderPos = newPos;
                 STB_calc = true;  // só recalcula se mexeu
+            }
+            */
+            int delta = newPos - lastEncoderPos;
+            if (delta != 0) {
+                // Atualiza fase em 1 grau por tick
+                if (delta > 0) {
+                    STB_phaseDegrees = int(STB_phaseDegrees + 1) % 360;
+                } else {
+                    STB_phaseDegrees = int(STB_phaseDegrees - 1);
+                    if (STB_phaseDegrees < 0) STB_phaseDegrees += 360;
+                }
+
+                lastEncoderPos = newPos;
+
+                // Recalcula tempos do estroboscópio
+                STB_calc = true;
+                updateValues();  // força atualização imediata
+
+                // Reinicia o timer do próximo pulso com a nova fase
+                portENTER_CRITICAL(&STB_timerMux);
+                STB_firstPulse = true; // garante que a fase seja aplicada no próximo pulso
+                portEXIT_CRITICAL(&STB_timerMux);
             }
           } else if (modeFreq == 2) {
             int delta = newPos - lastEncoderPos;
@@ -922,7 +944,7 @@ void drawScreen(Mode mode) {
     display.print(fpm / 60.0, 2);
     display.setCursor(0, 46);
     display.print(getValor(displayConfig, "PHASE", idioma) + " ");
-    display.print(phaseDegrees);
+    display.print(STB_phaseDegrees);
     display.println((char)247);
     if (modeFreq == 1) { 
       display.setCursor(95, 46);
