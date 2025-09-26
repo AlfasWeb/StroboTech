@@ -577,6 +577,10 @@ void loop() {
       case Mode::FREQUENCY:
         {
           //Comandos para alterar o valor usando o Encoder
+          if(!STB_outputEnabled){
+            dutyCycle = getValor(dadosConfig, "DUTY").toInt();
+            STB_calc = true;
+          }
           STB_outputEnabled = true;
           long newPos = encoder.read() / 8;
           // Dividido por 8 para reduzir sensibilidade
