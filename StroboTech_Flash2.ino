@@ -5,6 +5,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
+#include <Adafruit_LSM6DS.h>
 #define ENCODER_DO_NOT_USE_INTERRUPTS
 #include <Encoder.h>
 #include <arduinoFFT.h>
@@ -35,8 +36,14 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // =================
 // ==== Encoder e ADXL ====
 Encoder encoder(ENCODER_PIN_A, ENCODER_PIN_B);
+//Acelerometros
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(123);
 bool adxlAvailable = false;
+Adafruit_LSM6DS lsm6ds;
+bool lsmAvailable = false;
+//Fim Acelerometros
+
+bool AcelAvailable = false;
 //==== Inicialização do medidor de FFT ====
 #define SAMPLE_RATE 500  // Hz
 #define FFT_SIZE 512     //Resolução da frequência 256, 512 ou 1024
@@ -277,11 +284,20 @@ void updateCalibration() {
   unsigned long elapsed = now - calibrationStartTime;
   unsigned long remaining = (calibrationDuration > elapsed) ? (calibrationDuration - elapsed) : 0;
   secondsLeftCalib = remaining / 1000;
-  sensors_event_t event;
-  accel.getEvent(&event);
-  offsetX += event.acceleration.x;
-  offsetY += event.acceleration.y;
-  offsetZ += event.acceleration.z;
+  if(adxlAvailable){
+    sensors_event_t event;
+    accel.getEvent(&event);
+    offsetX += event.acceleration.x;
+    offsetY += event.acceleration.y;
+    offsetZ += event.acceleration.z;
+  }else{
+    sensors_event_t accelEvent, gyroEvent, tempEvent;
+    lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);
+
+    offsetX += accelEvent.acceleration.x;
+    offsetY += accelEvent.acceleration.y;
+    offsetZ += accelEvent.acceleration.z;
+  }
   sampleCount++;
   if (elapsed >= calibrationDuration) {
     offsetX /= sampleCount;
@@ -323,13 +339,24 @@ void updateMeasurement() {
   secondsLeft = remaining / 1000;
   if (micros() - lastSampleTime >= 1000000UL / SAMPLE_RATE && sampleCount < FFT_SIZE) {
     lastSampleTime = micros();
-    sensors_event_t event;
-    accel.getEvent(&event);
-    float x = event.acceleration.x - offsetX;
-    float y = event.acceleration.y - offsetY;
-    float z = event.acceleration.z - offsetZ;
-    float acc = sqrt(x * x + y * y + z * z);
-    accBuffer[sampleCount] = acc;
+    float x, y, z, acc;
+    if(adxlAvailable){
+      sensors_event_t event;
+      accel.getEvent(&event);
+      x = event.acceleration.x - offsetX;
+      y = event.acceleration.y - offsetY;
+      z = event.acceleration.z - offsetZ;
+      acc = sqrt(x * x + y * y + z * z);
+      accBuffer[sampleCount] = acc;
+    }else{
+      sensors_event_t accelEvent, gyroEvent, tempEvent;
+      lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent); // lê acel + gyro + temp
+
+      x = accelEvent.acceleration.x - offsetX;
+      y = accelEvent.acceleration.y - offsetY;
+      z = accelEvent.acceleration.z - offsetZ;
+      acc = sqrt(x*x + y*y + z*z);
+    }
     timeBuffer[sampleCount] = 0.0;
     velocitySum += acc / SAMPLE_RATE;
     if (acc > aPeak) aPeak = acc;
@@ -485,7 +512,15 @@ void setup() {
   }
   display.clearDisplay();
   adxlAvailable = accel.begin();
-  if (adxlAvailable) accel.setRange(ADXL345_RANGE_4_G);
+  if (adxlAvailable){
+    accel.setRange(ADXL345_RANGE_4_G);
+    AcelAvailable = true;
+  }
+  lsmAvailable = lsm6ds.begin_I2C(); // inicializa via I2C
+  if (lsmAvailable) {
+    lsm6ds.setAccelRange(LSM6DS_ACCEL_RANGE_4_G); // igual ao ADXL345
+    AcelAvailable = true;
+  }
   // Inicializa o timer com resolução de 1us (1MHz)
   Serial.begin(115200);
   while (!Serial);
@@ -536,7 +571,7 @@ void loop() {
   }
   //==== FIM STROBOSCOPIO ====
 
-  if (adxlAvailable) {
+  if (AcelAvailable) {
     updateMeasurement();
     updateCalibration();
   }
@@ -608,7 +643,6 @@ void loop() {
             }
           }*/
           if (modeFreq == 1) {
-            long newPos = encoder.read() / 8;  // reduz sensibilidade
             int delta = newPos - lastEncoderPos;
 
             if (delta != 0) {
@@ -855,6 +889,8 @@ void handleInput() {
     } else {
       if (selectedMode == Mode::FREQUENCY && !inSubmenu) {
         adjustFPM(0.5);
+        setValor(dadosConfig, "FPM", String(fpm));
+        STB_calc = true;
       }
     }
   }
@@ -875,6 +911,8 @@ void handleInput() {
     } else {
       if (selectedMode == Mode::FREQUENCY && !inSubmenu) {
         adjustFPM(2.0);
+        setValor(dadosConfig, "FPM", String(fpm));
+        STB_calc = true;
       }
     }
   }
@@ -981,7 +1019,7 @@ void drawScreen(Mode mode) {
       display.print("<");
     }
   } else if (currentMode == Mode::VIBROMETER) {
-    if (adxlAvailable) {
+    if (AcelAvailable) {
       switch (vibroState) {
         case VibroState::VIBRO_HOME:
           display.println(getValor(displayConfig, "CALIBRATE", idioma));
