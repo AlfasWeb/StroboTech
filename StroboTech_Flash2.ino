@@ -619,29 +619,6 @@ void loop() {
           STB_outputEnabled = true;
           long newPos = encoder.read() / 8;
           // Dividido por 8 para reduzir sensibilidade
-          /*if (modeFreq == 1) {
-            int delta = newPos - lastEncoderPos;
-            if (delta != 0) {
-                // Atualiza fase em 1 grau por tick
-                if (delta > 0) {
-                    STB_phaseDegrees = int(STB_phaseDegrees + 1) % 360;
-                } else {
-                    STB_phaseDegrees = int(STB_phaseDegrees - 1);
-                    if (STB_phaseDegrees < 0) STB_phaseDegrees += 360;
-                }
-
-                lastEncoderPos = newPos;
-
-                // Recalcula tempos do estroboscópio
-                STB_calc = true;
-                updateValues();  // força atualização imediata
-
-                // Reinicia o timer do próximo pulso com a nova fase
-                portENTER_CRITICAL(&STB_timerMux);
-                STB_firstPulse = true; // garante que a fase seja aplicada no próximo pulso
-                portEXIT_CRITICAL(&STB_timerMux);
-            }
-          }*/
           if (modeFreq == 1) {
             int delta = newPos - lastEncoderPos;
 
