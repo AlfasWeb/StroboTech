@@ -15,13 +15,13 @@
 // ==== Pinos ====
 #define ENCODER_PIN_A 33
 #define ENCODER_PIN_B 32
-#define BUTTON_MENU   25
-#define BUTTON_SET    13
-#define BUTTON_DOUBLE 27
-#define BUTTON_HALF   26
-#define BUTTON_ENC    17
-#define ONOFF         14
-#define LED_PIN       2        // Pino do LED de alta potência para o estroboscópio/lanterna
+#define BUTTON_MENU 25
+#define BUTTON_SET 13
+#define BUTTON_HALF 27
+#define BUTTON_DOUBLE 26
+#define BUTTON_ENC 17
+#define ONOFF 14
+#define LED_PIN 2        // Pino do LED de alta potência para o estroboscópio/lanterna
 #define SENSOR_IR_PIN 4  // Pino do sensor infravermelho para medição de RPM
 /* 
 GPIOObservações 
@@ -36,6 +36,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // =================
 // ==== Encoder e ADXL ====
 Encoder encoder(ENCODER_PIN_A, ENCODER_PIN_B);
+int Sensib_Encoder = 8;
 //Acelerometros
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(123);
 bool adxlAvailable = false;
@@ -51,101 +52,87 @@ double accBuffer[FFT_SIZE];
 double timeBuffer[FFT_SIZE];
 ArduinoFFT<double> FFT = ArduinoFFT<double>(accBuffer, timeBuffer, FFT_SIZE, SAMPLE_RATE);
 // ==== Menu ====
-enum class Mode { HOME,
-                  FREQUENCY,
-                  RPM,
-                  LANTERN,
-                  VIBROMETER,
-                  TEST,
-                  ABOUT,
-                  CONFIG,
-                  NUM_MODES };
-Mode currentMode = Mode::HOME;
-Mode selectedMode = Mode::HOME;
-bool inMenu = true;
-bool inSubmenu = false;
-bool inEncoder = false;
-int valInEncoder = 0;
-int modeFreq = 0;
+  enum class Mode { HOME, FREQUENCY, RPM, LANTERN, VIBROMETER, TEST, ABOUT, CONFIG, NUM_MODES };
+  Mode currentMode = Mode::HOME;
+  Mode selectedMode = Mode::HOME;
+  bool inMenu = true;
+  bool inSubmenu = false;
+  bool inEncoder = false;
+  int valInEncoder = 0;
+  int modeFreq = 0;
+  int modeConfig = 0;
+  int modeCalibFatRpm = 0;
+// ==== FIM Menu ====
+
 // ==== Variáveis do Vibrometro ====
-enum class VibroState { VIBRO_HOME,
-                        VIBRO_IDLE,
-                        VIBRO_CALIB,
-                        VIBRO_CONFIG,
-                        VIBRO_MEASURE,
-                        VIBRO_RESULT };
-VibroState vibroState = VibroState::VIBRO_HOME;
-// ==== Medição ====
-float ax, ay, az;
-float aRMS, aPeak, stdDev, vRMS, freqDominant;
-float velocitySum = 0;
-unsigned long lastSampleTime = 0;
-int sampleCount = 0;
-bool isMeasuring = false;
-bool isCalibrating = false;
-unsigned long measureStartTime = 0;
-unsigned long measureDuration = 0;
-unsigned long calibrationStartTime = 0;
-unsigned long calibrationDuration = 0;
-int secondsLeft = 0;
-int secondsLeftCalib = 0;
-float offsetX = 0, offsetY = 0, offsetZ = 0;
-//-------------------------------------
-// ==== Variáveis de Gravação do tempo de vibração ====
-int timeMeasure = 30;
-int timeCalib = 15;
-// ==== Variáveis do RPM ====
-#define TEMPO_LEITURA_RPM 1000  // em milissegundos (1 segundo)
-unsigned long ultimaLeitura = 0;
-int contagemPulsos = 0;
-bool estadoAnterior = LOW;
-float rpmValue = 0;
+  enum class VibroState { VIBRO_HOME, VIBRO_SELECTCALIB, VIBRO_CALIBRATING, VIBRO_SELECTMEASURE, VIBRO_MEASURING, VIBRO_MEASURERESULT, VIBRO_ABOUT };
+  VibroState vibroState = VibroState::VIBRO_HOME;
+  // ==== Medição ====
+  float ax, ay, az;
+  float aRMS, aPeak, stdDev, vRMS, freqDominant;
+  float velocitySum = 0;
+  unsigned long lastSampleTime = 0;
+  int sampleCount = 0;
+  bool isMeasuring = false;
+  bool isCalibrating = false;
+  unsigned long measureStartTime = 0;
+  unsigned long measureDuration = 0;
+  unsigned long calibrationStartTime = 0;
+  unsigned long calibrationDuration = 0;
+  int secondsLeft = 0;
+  int secondsLeftCalib = 0;
+  float offsetX = 0, offsetY = 0, offsetZ = 0;
+  //-------------------------------------
+  // ==== Variáveis de Gravação do tempo de vibração ====
+  int timeMeasure = 30;
+  int timeCalib = 15;
+// ==== FIM Variáveis do Vibrometro ====
 
 float FreqDeTest = 0;
 //-------------------------------------
 // Lista de mensagens
-String lines[] = {
-  "Um agradecimento es-",
-  "pecial para todos os",
-  "professores do SENAI",
-  "que nos incentivaram",
-  "e nos orientaram ate",
-  "o fim.",
-  "Sempre acreditando",
-  "mais que nos mesmo.",
-  "",
-  "Nossos professores:",
-  "Evandro Padilha",
-  "Renato L. Cruz",
-  "Vitor Santarosa",
-  "Alex Penteado",
-  "Bruno de Campos",
-  "Fernando A. Bosco",
-  "Fabio Camarinha",
-  "Gabriela Viana"
-};
-const int totalLines = sizeof(lines) / sizeof(lines[0]);
-int topLineIndex = 0;
-// Índice da linha superior visível
-int lineShowMsg = 6;
+  String lines[] = {
+    "Um agradecimento es-",
+    "pecial para todos os",
+    "professores do SENAI",
+    "que nos incentivaram",
+    "e nos orientaram ate",
+    "o fim.",
+    "Sempre acreditando",
+    "mais que nos mesmo.",
+    "",
+    "Nossos professores:",
+    "Evandro Padilha",
+    "Renato L. Cruz",
+    "Vitor Santarosa",
+    "Alex Penteado",
+    "Bruno de Campos",
+    "Fernando A. Bosco",
+    "Fabio Camarinha",
+    "Gabriela Viana"
+  };
+  const int totalLines = sizeof(lines) / sizeof(lines[0]);
+  int topLineIndex = 0;
+  // Índice da linha superior visível
+  int lineShowMsg = 6;
 // ==============
 // ==== Temporizador ====
-struct TimerMicros {
-  unsigned long start;
-  unsigned long duration;
-  void startTimer(int d) {
-    duration = d * 1000000UL;
-    start = micros();
-  }
-  bool isExpired() {
-    return (micros() - start) >= duration;
-  }
-  bool isRunning() {
-    return (micros() - start) < duration;
-  }
-};
-TimerMicros msgTimer;  //Pode criar quantos TimerMicros for necessário
-TimerMicros fpmTest;
+  struct TimerMicros {
+    unsigned long start;
+    unsigned long duration;
+    void startTimer(int d) {
+      duration = d * 1000000UL;
+      start = micros();
+    }
+    bool isExpired() {
+      return (micros() - start) >= duration;
+    }
+    bool isRunning() {
+      return (micros() - start) < duration;
+    }
+  };
+  TimerMicros msgTimer;  //Pode criar quantos TimerMicros for necessário
+  TimerMicros fpmTest;
 // ==== Vetores da Flash ====
 std::vector<Config> dadosConfig;
 std::vector<Config> lastDadosConfig;
@@ -161,61 +148,145 @@ bool lanterna = false;
 bool TESTE_calc = false;
 float TESTE_fpm = 0;
 
-// ==== FIM TESTE ====
-// ==== Variáveis do Modo Estroboscópio ====
-int fpm = 683;
-const int minFPM = 30; // Limite mínimo de FPM
-const int maxFPM = 35000; // Limite máximo de FPM
+// ==== RPM ====
+  int rpmValue = 0;
+  float CalibFat = 0.555;    // fator inicial
+  float step = 0.000;        // passo de variação
+  float minVal = 0.000;      // limite mínimo
+  float maxVal = 4.000;      // limite máximo
 
-int dutyCycle = 4;
-const int minDuty = 1;
-const int maxDuty = 100;
+  volatile int count = 0;
+  unsigned long lastMillis = 0;
+  int divisor = 1;
+
+  void loadRPM(){
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastMillis >= 1000) {
+      lastMillis = currentMillis;
+      
+      rpmValue = (count * 60) / divisor*CalibFat;
+      
+      count = 0;
+    }
+  }
+
+  void countWhiteStripe() {
+    count++;
+  }
+  /*
+    volatile unsigned long objects = 0; // precisa ser unsigned long p/ evitar overflow
+    float rpm = 0;
+    float newRpm = 0;
+    unsigned long lastMillis = 0;
+
+    const unsigned int sampleInterval = 500;   // intervalo de amostragem (ms)
+    const byte pulsesPerRevolution = 2;        // número de pulsos por volta
+
+    // Média móvel
+    const byte numSamples = 5;
+    float rpmSamples[numSamples];
+    byte sampleIndex = 0;
+    bool bufferFilled = false;
+
+    void loadRPM() {
+      unsigned long now = millis();
+
+      if (now - lastMillis >= sampleInterval) {
+        noInterrupts();          // evita conflito de leitura
+        unsigned long pulseCount = objects;
+        objects = 0;
+        interrupts();
+
+        // Protege contra divisão por zero
+        if (sampleInterval == 0 || pulsesPerRevolution == 0) return;
+
+        // Calcula RPM atual (usando float p/ precisão)
+        float currentRPM = ((pulseCount / (float)pulsesPerRevolution) * (60000.0 / sampleInterval)) * CalibFat;
+
+        // Armazena no buffer circular
+        rpmSamples[sampleIndex] = currentRPM;
+        sampleIndex = (sampleIndex + 1) % numSamples;
+        if (sampleIndex == 0) bufferFilled = true;
+
+        // Calcula média móvel
+        float sum = 0;
+        byte count = bufferFilled ? numSamples : sampleIndex;
+        for (byte i = 0; i < count; i++) sum += rpmSamples[i];
+        rpm = (count > 0) ? (sum / count) : 0;
+
+        // Mostra no Serial
+        if(rpm != newRpm){
+          Serial.print("RPM (média): ");
+          Serial.println(rpm, 1);
+          newRpm = rpm;
+          rpmValue = rpm;
+        }
+        lastMillis = now;
+      }
+    }
+
+    void count() {
+      objects++;
+    }
+  */
+
+// ==== FIM RPM ====
 
 // ==== STROBOSCOPIO ==== //
-// ==== Variáveis do Modo Estroboscópio ====
-long STB_lastEncoderPos = 0;
-int STB_phaseDegrees = 0;
-// Ajuste de fase em graus
-unsigned long STB_partTime = 1000000;
-// Duração de meio ciclo em microssegundos
-unsigned long STB_phaseDelayMicros = 0;
-// Atraso de fase em microssegundos
-bool STB_calc = true;
-// Indica se os cálculos precisam ser refeitos
-bool STB_firstPulse = true;
-// Para aplicar a fase apenas uma vez
-bool STB_outputEnabled = false;
-// Controla se a saída está ativa
-hw_timer_t *timer = NULL;
-portMUX_TYPE STB_timerMux = portMUX_INITIALIZER_UNLOCKED;
-volatile bool STB_pulseState = false;
+  // ==== Variáveis do Modo Estroboscópio ====
+  int fpm = 683;
+  const int minFPM = 30;     // Limite mínimo de FPM
+  const int maxFPM = 35000;  // Limite máximo de FPM
 
-volatile unsigned long STB_timeHigh = 0;
-volatile unsigned long STB_timeLow  = 0;
-// ==== Função de interrupção do timer. Alterna o estado do LED e aplica o atraso de fase na primeira chamada. ====
-void IRAM_ATTR onTimer() {
+  int dutyCycle = 4;
+  const int minDuty = 1;
+  const int maxDuty = 100;
+
+
+  // ==== Variáveis do Modo Estroboscópio ====
+  long STB_lastEncoderPos = 0;
+  int STB_phaseDegrees = 0;
+  // Ajuste de fase em graus
+  unsigned long STB_partTime = 1000000;
+  // Duração de meio ciclo em microssegundos
+  unsigned long STB_phaseDelayMicros = 0;
+  // Atraso de fase em microssegundos
+  bool STB_calc = true;
+  // Indica se os cálculos precisam ser refeitos
+  bool STB_firstPulse = true;
+  // Para aplicar a fase apenas uma vez
+  bool STB_outputEnabled = false;
+  // Controla se a saída está ativa
+  hw_timer_t *timer = NULL;
+  portMUX_TYPE STB_timerMux = portMUX_INITIALIZER_UNLOCKED;
+  volatile bool STB_pulseState = false;
+
+  volatile unsigned long STB_timeHigh = 0;
+  volatile unsigned long STB_timeLow = 0;
+  // ==== Função de interrupção do timer. Alterna o estado do LED e aplica o atraso de fase na primeira chamada. ====
+  void IRAM_ATTR onTimer() {
     portENTER_CRITICAL_ISR(&STB_timerMux);
 
     if (!STB_outputEnabled) {
-        GPIO.out_w1tc = (1 << LED_PIN);  // Força LOW
-        portEXIT_CRITICAL_ISR(&STB_timerMux);
-        return;
+      GPIO.out_w1tc = (1 << LED_PIN);  // Força LOW
+      portEXIT_CRITICAL_ISR(&STB_timerMux);
+      return;
     }
 
     // Aplica fase apenas no primeiro pulso
     if (STB_firstPulse && STB_phaseDelayMicros > 0) {
-        timerAlarm(timer, STB_phaseDelayMicros, true, 0);
-        STB_firstPulse = false;
-        portEXIT_CRITICAL_ISR(&STB_timerMux);
-        return;
+      timerAlarm(timer, STB_phaseDelayMicros, true, 0);
+      STB_firstPulse = false;
+      portEXIT_CRITICAL_ISR(&STB_timerMux);
+      return;
     }
 
     // Alterna o LED
     STB_pulseState = !STB_pulseState;
     if (STB_pulseState) {
-        GPIO.out_w1ts = (1 << LED_PIN);  // HIGH
+      GPIO.out_w1ts = (1 << LED_PIN);  // HIGH
     } else {
-        GPIO.out_w1tc = (1 << LED_PIN);  // LOW
+      GPIO.out_w1tc = (1 << LED_PIN);  // LOW
     }
 
     // Define próximo intervalo: HIGH ou LOW
@@ -223,207 +294,207 @@ void IRAM_ATTR onTimer() {
     timerAlarm(timer, nextInterval, true, 0);
 
     portEXIT_CRITICAL_ISR(&STB_timerMux);
-}
-// Atualiza os valores com base na entrada de FPM. Recalcula os tempos de ciclo e atraso de fase.
-void updateValues() {
-  // Tempo total de ciclo em microssegundos (um ciclo completo do FPM)
-  unsigned long cycleTimeMicros = 60000000UL / fpm;
-  if (TESTE_calc) {
-    cycleTimeMicros = 60000000UL / TESTE_fpm;
   }
-  // Duty mínimo de 1% para flashes curtos
-  float dutyFraction = (dutyCycle < 1) ? 0.01f : ((float)dutyCycle / 100.0f);
+  // Atualiza os valores com base na entrada de FPM. Recalcula os tempos de ciclo e atraso de fase.
+  void updateValues() {
+    // Tempo total de ciclo em microssegundos (um ciclo completo do FPM)
+    unsigned long cycleTimeMicros = 60000000UL / fpm;
+    if (TESTE_calc) {
+      cycleTimeMicros = 60000000UL / TESTE_fpm;
+    }
+    // Duty mínimo de 1% para flashes curtos
+    float dutyFraction = (dutyCycle < 1) ? 0.01f : ((float)dutyCycle / 100.0f);
 
-  // Calcula tempo de HIGH e LOW do LED
-  STB_timeHigh = cycleTimeMicros * dutyFraction;
-  STB_timeLow  = cycleTimeMicros - STB_timeHigh;
+    // Calcula tempo de HIGH e LOW do LED
+    STB_timeHigh = cycleTimeMicros * dutyFraction;
+    STB_timeLow = cycleTimeMicros - STB_timeHigh;
 
-  // Calcula o atraso de fase
-  STB_phaseDelayMicros = (STB_phaseDegrees / 360.0f) * cycleTimeMicros;
+    // Calcula o atraso de fase
+    STB_phaseDelayMicros = (STB_phaseDegrees / 360.0f) * cycleTimeMicros;
 
-  // Prepara para o primeiro pulso
-  STB_firstPulse = true;
-  STB_calc = false;
-}
+    // Prepara para o primeiro pulso
+    STB_firstPulse = true;
+    STB_calc = false;
+  }
 // Fim Stroboscópio
 
 // ==== Ajusta o FPM multiplicando-o por um fator ====
-void adjustFPM(float factor) {
-  fpm = constrain(fpm * factor, minFPM, maxFPM);
-}
-bool checkButtonDebounce(uint8_t pin, bool &lastState, unsigned long &lastDebounceTime, unsigned long debounceDelayMicros = 200000) {
-  bool currentState = digitalRead(pin);
-  unsigned long now = micros();
-  if (currentState == LOW && lastState == HIGH && (now - lastDebounceTime > debounceDelayMicros)) {
-    lastDebounceTime = now;
-    lastState = currentState;
-    return true;  // Botão pressionado com debounce válido
+  void adjustFPM(float factor) {
+    fpm = constrain(fpm * factor, minFPM, maxFPM);
   }
-  lastState = currentState;
-  return false;
-}
+  bool checkButtonDebounce(uint8_t pin, bool &lastState, unsigned long &lastDebounceTime, unsigned long debounceDelayMicros = 200000) {
+    bool currentState = digitalRead(pin);
+    unsigned long now = micros();
+    if (currentState == LOW && lastState == HIGH && (now - lastDebounceTime > debounceDelayMicros)) {
+      lastDebounceTime = now;
+      lastState = currentState;
+      return true;  // Botão pressionado com debounce válido
+    }
+    lastState = currentState;
+    return false;
+  }
 //-------------------------------------
 // ==== Funçoes do Vibrometro calibrar e medir ====
-// Inicia calibração com tempo em segundos
-void startCalibration(int durationSeconds) {
-  isCalibrating = true;
-  calibrationDuration = durationSeconds * 1000UL;
-  calibrationStartTime = millis();
-  offsetX = 0;
-  offsetY = 0;
-  offsetZ = 0;
-  sampleCount = 0;
-  secondsLeftCalib = durationSeconds;
-  vibroState = VibroState::VIBRO_CALIB;
-  Serial.println("Iniciando calibração...");
-}
-
-void updateCalibration() {
-  if (!isCalibrating) return;
-  unsigned long now = millis();
-  unsigned long elapsed = now - calibrationStartTime;
-  unsigned long remaining = (calibrationDuration > elapsed) ? (calibrationDuration - elapsed) : 0;
-  secondsLeftCalib = remaining / 1000;
-  if(adxlAvailable){
-    sensors_event_t event;
-    accel.getEvent(&event);
-    offsetX += event.acceleration.x;
-    offsetY += event.acceleration.y;
-    offsetZ += event.acceleration.z;
-  }else{
-    sensors_event_t accelEvent, gyroEvent, tempEvent;
-    lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);
-
-    offsetX += accelEvent.acceleration.x;
-    offsetY += accelEvent.acceleration.y;
-    offsetZ += accelEvent.acceleration.z;
+  // Inicia calibração com tempo em segundos
+  void startCalibration(int durationSeconds) {
+    isCalibrating = true;
+    calibrationDuration = durationSeconds * 1000UL;
+    calibrationStartTime = millis();
+    offsetX = 0;
+    offsetY = 0;
+    offsetZ = 0;
+    sampleCount = 0;
+    secondsLeftCalib = durationSeconds;
+    Serial.println("Iniciando calibração...");
   }
-  sampleCount++;
-  if (elapsed >= calibrationDuration) {
-    offsetX /= sampleCount;
-    offsetY /= sampleCount;
-    offsetZ /= sampleCount;
-    isCalibrating = false;
-    vibroState = VibroState::VIBRO_IDLE;
-    Serial.println("Calibração concluída!");
-    Serial.print("Offset X: ");
-    Serial.println(offsetX);
-    Serial.print("Offset Y: ");
-    Serial.println(offsetY);
-    Serial.print("Offset Z: ");
-    Serial.println(offsetZ);
-  }
-}
-//vibroState = VibroState::VIBRO_CONFIG;
-void startMeasurement(int durationSeconds) {
-  isMeasuring = true;
-  measureStartTime = millis();
-  measureDuration = durationSeconds * 1000UL;
-  secondsLeft = durationSeconds;
-  sampleCount = 0;
-  velocitySum = 0;
-  aPeak = 0;
-  aRMS = 0;
-  stdDev = 0;
-  freqDominant = 0;
-  lastSampleTime = 0;
-  vibroState = VibroState::VIBRO_CONFIG;
-  Serial.println("Iniciando medição...");
-}
-//vibroState = VibroState::VIBRO_MEASURE;
-void updateMeasurement() {
-  if (!isMeasuring) return;
-  unsigned long now = millis();
-  unsigned long elapsed = now - measureStartTime;
-  unsigned long remaining = (measureDuration > elapsed) ? (measureDuration - elapsed) : 0;
-  secondsLeft = remaining / 1000;
-  if (micros() - lastSampleTime >= 1000000UL / SAMPLE_RATE && sampleCount < FFT_SIZE) {
-    lastSampleTime = micros();
-    float x, y, z, acc;
-    if(adxlAvailable){
+
+  void updateCalibration() {
+    if (!isCalibrating) return;
+    unsigned long now = millis();
+    unsigned long elapsed = now - calibrationStartTime;
+    unsigned long remaining = (calibrationDuration > elapsed) ? (calibrationDuration - elapsed) : 0;
+    secondsLeftCalib = remaining / 1000;
+    if (adxlAvailable) {
       sensors_event_t event;
       accel.getEvent(&event);
-      x = event.acceleration.x - offsetX;
-      y = event.acceleration.y - offsetY;
-      z = event.acceleration.z - offsetZ;
-      acc = sqrt(x * x + y * y + z * z);
-      accBuffer[sampleCount] = acc;
-    }else{
+      offsetX += event.acceleration.x;
+      offsetY += event.acceleration.y;
+      offsetZ += event.acceleration.z;
+    } else {
       sensors_event_t accelEvent, gyroEvent, tempEvent;
-      lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent); // lê acel + gyro + temp
+      lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);
 
-      x = accelEvent.acceleration.x - offsetX;
-      y = accelEvent.acceleration.y - offsetY;
-      z = accelEvent.acceleration.z - offsetZ;
-      acc = sqrt(x*x + y*y + z*z);
+      offsetX += accelEvent.acceleration.x;
+      offsetY += accelEvent.acceleration.y;
+      offsetZ += accelEvent.acceleration.z;
     }
-    timeBuffer[sampleCount] = 0.0;
-    velocitySum += acc / SAMPLE_RATE;
-    if (acc > aPeak) aPeak = acc;
     sampleCount++;
+    if (elapsed >= calibrationDuration) {
+      offsetX /= sampleCount;
+      offsetY /= sampleCount;
+      offsetZ /= sampleCount;
+      isCalibrating = false;
+      vibroState = VibroState::VIBRO_SELECTMEASURE;
+      Serial.println("Calibração concluída!");
+      Serial.print("Offset X: ");
+      Serial.println(offsetX);
+      Serial.print("Offset Y: ");
+      Serial.println(offsetY);
+      Serial.print("Offset Z: ");
+      Serial.println(offsetZ);
+    }
   }
-  if (elapsed >= measureDuration && sampleCount == FFT_SIZE) {
-    isMeasuring = false;
-    float sum = 0, sumSq = 0;
-    for (int i = 0; i < FFT_SIZE; i++) {
-      sum += accBuffer[i];
-      sumSq += accBuffer[i] * accBuffer[i];
-    }
-    float mean = sum / FFT_SIZE;
-    aRMS = sqrt(sumSq / FFT_SIZE);
-    float variance = 0;
-    for (int i = 0; i < FFT_SIZE; i++) {
-      variance += pow(accBuffer[i] - mean, 2);
-    }
-    stdDev = sqrt(variance / FFT_SIZE);
-    vRMS = velocitySum / FFT_SIZE;
-    // Remoção de offset DC
-    double dcOffset = 0;
-    for (int i = 0; i < FFT_SIZE; i++) {
-      dcOffset += accBuffer[i];
-    }
-    dcOffset /= FFT_SIZE;
-    for (int i = 0; i < FFT_SIZE; i++) {
-      accBuffer[i] -= dcOffset;
-    }
-    FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
-    FFT.compute(FFT_FORWARD);
-    FFT.complexToMagnitude();
-    double maxMag = 0;
-    int index = 0;
-    for (int i = 1; i < FFT_SIZE / 2; i++) {
-      if (accBuffer[i] > maxMag && accBuffer[i] > 5.0) {  // Filtro de ruído
-        maxMag = accBuffer[i];
-        index = i;
+  //vibroState = VibroState::VIBRO_CONFIG;
+  void startMeasurement(int durationSeconds) {
+    isMeasuring = true;
+    measureStartTime = millis();
+    measureDuration = durationSeconds * 1000UL;
+    secondsLeft = durationSeconds;
+    sampleCount = 0;
+    velocitySum = 0;
+    aPeak = 0;
+    aRMS = 0;
+    stdDev = 0;
+    freqDominant = 0;
+    lastSampleTime = 0;
+    Serial.println("Iniciando medição...");
+  }
+  //vibroState = VibroState::VIBRO_MEASURERESULT;
+  void updateMeasurement() {
+    if (!isMeasuring) return;
+    unsigned long now = millis();
+    unsigned long elapsed = now - measureStartTime;
+    unsigned long remaining = (measureDuration > elapsed) ? (measureDuration - elapsed) : 0;
+    secondsLeft = remaining / 1000;
+    if (micros() - lastSampleTime >= 1000000UL / SAMPLE_RATE && sampleCount < FFT_SIZE) {
+      lastSampleTime = micros();
+      float x, y, z, acc;
+      if (adxlAvailable) {
+        sensors_event_t event;
+        accel.getEvent(&event);
+        x = event.acceleration.x - offsetX;
+        y = event.acceleration.y - offsetY;
+        z = event.acceleration.z - offsetZ;
+        acc = sqrt(x * x + y * y + z * z);
+        accBuffer[sampleCount] = acc;
+      } else {
+        sensors_event_t accelEvent, gyroEvent, tempEvent;
+        lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);  // lê acel + gyro + temp
+
+        x = accelEvent.acceleration.x - offsetX;
+        y = accelEvent.acceleration.y - offsetY;
+        z = accelEvent.acceleration.z - offsetZ;
+        acc = sqrt(x * x + y * y + z * z);
       }
+      timeBuffer[sampleCount] = 0.0;
+      velocitySum += acc / SAMPLE_RATE;
+      if (acc > aPeak) aPeak = acc;
+      sampleCount++;
     }
-    freqDominant = (index * SAMPLE_RATE) / (float)FFT_SIZE;
-    Serial.print("Magnitude FFT pico: ");
-    Serial.println(maxMag);
-    // Filtro adicional para descartar leitura de frequência em estado estático
-    if (aRMS < 0.15 && stdDev < 0.05 && vRMS < 0.01 && maxMag < 5.0) {
-      freqDominant = 0;
+    if (elapsed >= measureDuration && sampleCount == FFT_SIZE) {
+      isMeasuring = false;
+      float sum = 0, sumSq = 0;
+      for (int i = 0; i < FFT_SIZE; i++) {
+        sum += accBuffer[i];
+        sumSq += accBuffer[i] * accBuffer[i];
+      }
+      float mean = sum / FFT_SIZE;
+      aRMS = sqrt(sumSq / FFT_SIZE);
+      float variance = 0;
+      for (int i = 0; i < FFT_SIZE; i++) {
+        variance += pow(accBuffer[i] - mean, 2);
+      }
+      stdDev = sqrt(variance / FFT_SIZE);
+      vRMS = velocitySum / FFT_SIZE;
+      // Remoção de offset DC
+      double dcOffset = 0;
+      for (int i = 0; i < FFT_SIZE; i++) {
+        dcOffset += accBuffer[i];
+      }
+      dcOffset /= FFT_SIZE;
+      for (int i = 0; i < FFT_SIZE; i++) {
+        accBuffer[i] -= dcOffset;
+      }
+      FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+      FFT.compute(FFT_FORWARD);
+      FFT.complexToMagnitude();
+      double maxMag = 0;
+      int index = 0;
+      for (int i = 1; i < FFT_SIZE / 2; i++) {
+        if (accBuffer[i] > maxMag && accBuffer[i] > 5.0) {  // Filtro de ruído
+          maxMag = accBuffer[i];
+          index = i;
+        }
+      }
+      freqDominant = (index * SAMPLE_RATE) / (float)FFT_SIZE;
+      Serial.print("Magnitude FFT pico: ");
+      Serial.println(maxMag);
+      // Filtro adicional para descartar leitura de frequência em estado estático
+      if (aRMS < 0.15 && stdDev < 0.05 && vRMS < 0.01 && maxMag < 5.0) {
+        freqDominant = 0;
+      }
+      vibroState = VibroState::VIBRO_MEASURERESULT;
+      Serial.println("\n--- RESULTADO ---");
+      Serial.print("Pico Acel: ");
+      Serial.print(aPeak, 3);
+      Serial.println(" m/s²");
+      Serial.print("RMS Acel: ");
+      Serial.print(aRMS, 3);
+      Serial.println(" m/s²");
+      Serial.print("Desvio padrão: ");
+      Serial.print(stdDev, 3);
+      Serial.println(" m/s²");
+      Serial.print("Velocidade RMS: ");
+      Serial.print(vRMS, 3);
+      Serial.println(" m/s");
+      Serial.print("Freq. dominante: ");
+      Serial.print(freqDominant, 2);
+      Serial.println(" Hz");
+      Serial.println("-----------------");
     }
-    vibroState = VibroState::VIBRO_MEASURE;
-    Serial.println("\n--- RESULTADO ---");
-    Serial.print("Pico Acel: ");
-    Serial.print(aPeak, 3);
-    Serial.println(" m/s²");
-    Serial.print("RMS Acel: ");
-    Serial.print(aRMS, 3);
-    Serial.println(" m/s²");
-    Serial.print("Desvio padrão: ");
-    Serial.print(stdDev, 3);
-    Serial.println(" m/s²");
-    Serial.print("Velocidade RMS: ");
-    Serial.print(vRMS, 3);
-    Serial.println(" m/s");
-    Serial.print("Freq. dominante: ");
-    Serial.print(freqDominant, 2);
-    Serial.println(" Hz");
-    Serial.println("-----------------");
   }
-}
+// ==== FIM Funçoes do Vibrometro calibrar e medir ====
+
 void exibirImagemDaFlash(uint32_t enderecoInicial, int largura, int altura, int offsetX, int offsetY) {
   int bytesPorLinha = largura / 8;
   uint8_t linhaBuffer[bytesPorLinha];
@@ -479,8 +550,8 @@ bool updateValuesRec() {
 void setupButtons() {
   pinMode(BUTTON_MENU, INPUT_PULLUP);
   pinMode(BUTTON_SET, INPUT_PULLUP);
-  pinMode(BUTTON_DOUBLE, INPUT_PULLUP);
   pinMode(BUTTON_HALF, INPUT_PULLUP);
+  pinMode(BUTTON_DOUBLE, INPUT_PULLUP);
   pinMode(BUTTON_ENC, INPUT_PULLUP);
 }
 void setup() {
@@ -498,9 +569,11 @@ void setup() {
 
   // Garante que comece apagado
   GPIO.out_w1tc = (1 << LED_PIN);
-      
+
   // Inicializa o pino do sensor IR
   pinMode(SENSOR_IR_PIN, INPUT);
+  //attachInterrupt(digitalPinToInterrupt(SENSOR_IR_PIN), count, FALLING);
+  attachInterrupt(digitalPinToInterrupt(SENSOR_IR_PIN), countWhiteStripe, RISING);
   setupButtons();
   EEPROM.begin(EEPROM_SIZE);
   // Inicia a comunicação I2C com os pinos corretos
@@ -511,16 +584,6 @@ void setup() {
     while (true);
   }
   display.clearDisplay();
-  adxlAvailable = accel.begin();
-  if (adxlAvailable){
-    accel.setRange(ADXL345_RANGE_4_G);
-    AcelAvailable = true;
-  }
-  lsmAvailable = lsm6ds.begin_I2C(); // inicializa via I2C
-  if (lsmAvailable) {
-    lsm6ds.setAccelRange(LSM6DS_ACCEL_RANGE_4_G); // igual ao ADXL345
-    AcelAvailable = true;
-  }
   // Inicializa o timer com resolução de 1us (1MHz)
   Serial.begin(115200);
   while (!Serial);
@@ -528,6 +591,17 @@ void setup() {
   identificarJEDEC();
   exibirImagemDaFlash(0x00000, 128, 64, 0, 0);
   delay(2000);
+  //Inicializa acelerometro após delay para reconhecer com certeza
+  adxlAvailable = accel.begin();
+  if (adxlAvailable) {
+    accel.setRange(ADXL345_RANGE_4_G);
+    AcelAvailable = true;
+  }
+  lsmAvailable = lsm6ds.begin_I2C();  // inicializa via I2C
+  if (lsmAvailable) {
+    lsm6ds.setAccelRange(LSM6DS_ACCEL_RANGE_4_G);  // igual ao ADXL345
+    AcelAvailable = true;
+  }
   display.clearDisplay();
   exibirImagemDaFlash(0x0041F, 128, 32, 0, 20);
   if (EEPROM.read(0) == 0xFF) {
@@ -538,6 +612,7 @@ void setup() {
     setValor(dadosConfig, "TIMECALIB", "10");
     setValor(dadosConfig, "FPM", "1200");
     setValor(dadosConfig, "DUTY", "4");
+    setValor(dadosConfig, "CALIBFATRPM", "1.000");
     // Salva os valores padrão na EEPROM
     salvarDadosEEPROM(dadosConfig);
   } else {
@@ -551,6 +626,7 @@ void setup() {
   timeCalib = getValor(dadosConfig, "TIMECALIB").toInt();
   fpm = getValor(dadosConfig, "FPM").toInt();
   dutyCycle = getValor(dadosConfig, "DUTY").toInt();
+  CalibFat = getValor(dadosConfig, "CALIBFATRPM").toFloat();
 
   delay(1000);
   carregarArquivoParcial(displayConfig, 0x006DD, 0x001FFF, idioma);
@@ -578,15 +654,17 @@ void loop() {
   if (inMenu) {
     drawMenu();
     vibroState = VibroState::VIBRO_HOME;
-
+    valInEncoder = 0;
+    modeConfig = 0;
+    modeCalibFatRpm=0;
     //==== STROBOSCOPIO ====
-    if(lanterna){
+    if (lanterna) {
       timer = timerBegin(1000000);
       timerAttachInterrupt(timer, onTimer);
       timerAlarm(timer, STB_partTime, true, 0);
       lanterna = false;
     }
-    GPIO.out_w1tc = (1 << LED_PIN); //LOW
+    GPIO.out_w1tc = (1 << LED_PIN);  //LOW
     STB_outputEnabled = false;
     modeFreq = 0;
     STB_phaseDegrees = 0;
@@ -594,7 +672,7 @@ void loop() {
 
     // === Lógica do Encoder para navegação do menu principal ===
     static long lastEncoderPosition = 0;
-    long newPosition = encoder.read() / 8;  // Ajuste o divisor para a sensibilidade que preferir
+    long newPosition = encoder.read() / Sensib_Encoder;  // Ajuste o divisor para a sensibilidade que preferir
     if (newPosition != lastEncoderPosition) {
       int delta = newPosition - lastEncoderPosition;
       if (delta > 0) {  // Girando para a frente
@@ -612,12 +690,12 @@ void loop() {
       case Mode::FREQUENCY:
         {
           //Comandos para alterar o valor usando o Encoder
-          if(!STB_outputEnabled){
+          if (!STB_outputEnabled) {
             dutyCycle = getValor(dadosConfig, "DUTY").toInt();
             STB_calc = true;
           }
           STB_outputEnabled = true;
-          long newPos = encoder.read() / 8;
+          long newPos = encoder.read() / Sensib_Encoder;
           // Dividido por 8 para reduzir sensibilidade
           if (modeFreq == 1) {
             int delta = newPos - lastEncoderPos;
@@ -625,116 +703,101 @@ void loop() {
             if (delta != 0) {
               // Atualiza fase em 1 grau por tick
               if (delta > 0) {
-                  STB_phaseDegrees = (STB_phaseDegrees + 1) % 360;
+                STB_phaseDegrees = (STB_phaseDegrees + 1) % 360;
               } else {
-                  STB_phaseDegrees--;
-                  if (STB_phaseDegrees < 0) STB_phaseDegrees += 360;
+                STB_phaseDegrees--;
+                if (STB_phaseDegrees < 0) STB_phaseDegrees += 360;
               }
 
               lastEncoderPos = newPos;
 
               // Recalcula tempos do estroboscópio
               STB_calc = true;
-              updateValues(); // força atualização imediata
+              updateValues();  // força atualização imediata
 
               // Aplica fase imediatamente no próximo pulso
               portENTER_CRITICAL(&STB_timerMux);
-              STB_firstPulse = true;  // sinaliza que a fase deve ser aplicada
-              timerStop(timer);       // pausa temporariamente o timer
-              timerWrite(timer, 0);   // reseta o contador
-              timerAttachInterrupt(timer, onTimer); // reconecta a ISR (compatível 3.3.1)
-              timerStart(timer);      // reinicia o timer
-              STB_outputEnabled = true; // garante saída ativa
+              STB_firstPulse = true;                 // sinaliza que a fase deve ser aplicada
+              timerStop(timer);                      // pausa temporariamente o timer
+              timerWrite(timer, 0);                  // reseta o contador
+              timerAttachInterrupt(timer, onTimer);  // reconecta a ISR (compatível 3.3.1)
+              timerStart(timer);                     // reinicia o timer
+              STB_outputEnabled = true;              // garante saída ativa
               portEXIT_CRITICAL(&STB_timerMux);
-          }
+            }
           } else if (modeFreq == 2) {
             int delta = newPos - lastEncoderPos;
             if (delta != 0) {
-                dutyCycle = constrain(dutyCycle + delta, minDuty, maxDuty);
-                lastEncoderPos = newPos;
-                setValor(dadosConfig, "DUTY", String(dutyCycle));
-                STB_calc = true;
+              dutyCycle = constrain(dutyCycle + delta, minDuty, maxDuty);
+              lastEncoderPos = newPos;
+              setValor(dadosConfig, "DUTY", String(dutyCycle));
+              STB_calc = true;
             }
-          }else{
+          } else {
             int delta = newPos - lastEncoderPos;
             if (valInEncoder == 1) delta *= 10;
             else if (valInEncoder == 2) delta *= 100;
             if (delta != 0) {
-                fpm = constrain(fpm + delta, minFPM, maxFPM);
-                lastEncoderPos = newPos;
-                setValor(dadosConfig, "FPM", String(fpm));
-                STB_calc = true;
+              fpm = constrain(fpm + delta, minFPM, maxFPM);
+              lastEncoderPos = newPos;
+              setValor(dadosConfig, "FPM", String(fpm));
+              STB_calc = true;
             }
           }
           break;
         }
       case Mode::RPM:
         {
-          unsigned long agora = millis();
-          bool estadoAtual = digitalRead(SENSOR_IR_PIN);
-          // Detecta pulso (borda de subida: LOW -> HIGH)
-          if (estadoAtual == HIGH && estadoAnterior == LOW) {
-            contagemPulsos++;
-          }
-          estadoAnterior = estadoAtual;
-          // A cada TEMPO_LEITURA_RPM milissegundos, calcula e imprime o RPM
-          if (agora - ultimaLeitura >= TEMPO_LEITURA_RPM) {
-            ultimaLeitura = agora;
-            // Se há 1 marca por rotação, então: RPM = pulsos * 60
-            int rpm = contagemPulsos * 60;
-            rpmValue = rpm;
-            // Reinicia a contagem
-            contagemPulsos = 0;
-          }
+          loadRPM();
           break;
         }
       case Mode::LANTERN:
         lanterna = true;
-        STB_outputEnabled = false;         // flag de segurança
-        timerDetachInterrupt(timer);       // desliga o timer (não chama mais a ISR)
-        dutyCycle = 100;                   // força duty a 100%
-        GPIO.out_w1ts = (1 << LED_PIN);    // mantém LED aceso fixo
+        STB_outputEnabled = false;       // flag de segurança
+        timerDetachInterrupt(timer);     // desliga o timer (não chama mais a ISR)
+        dutyCycle = 100;                 // força duty a 100%
+        GPIO.out_w1ts = (1 << LED_PIN);  // mantém LED aceso fixo
         break;
-      case Mode::TEST: {
-        static unsigned long ultimoTempo = 0;
-        static float fpmAtual = 30.0;
-        static const float passo = 30.0;
-        static const unsigned long intervaloTeste = 500;  // 2 segundos entre passos
+      case Mode::TEST:
+        {
+          static unsigned long ultimoTempo = 0;
+          static float fpmAtual = 30.0;
+          static const float passo = 30.0;
+          static const unsigned long intervaloTeste = 500;  // 2 segundos entre passos
 
-        unsigned long agora = millis();
+          unsigned long agora = millis();
 
-        if (fpmTest.isRunning()) {
+          if (fpmTest.isRunning()) {
             if (agora - ultimoTempo >= intervaloTeste) {
-                TESTE_fpm = fpmAtual;
-                TESTE_calc = true;        // <<< Ativa cálculo com TESTE_fpm
-                updateValues();
+              TESTE_fpm = fpmAtual;
+              TESTE_calc = true;  // <<< Ativa cálculo com TESTE_fpm
+              updateValues();
 
-                fpmAtual += passo;
-                FreqDeTest = fpmAtual / 60.0;
+              fpmAtual += passo;
+              FreqDeTest = fpmAtual / 60.0;
 
-                if (fpmAtual >= maxFPM) {
-                    fpmAtual = 30.0;      // reinicia ciclo
-                }
-                ultimoTempo = agora;
+              if (fpmAtual >= maxFPM) {
+                fpmAtual = 30.0;  // reinicia ciclo
+              }
+              ultimoTempo = agora;
             }
-            STB_outputEnabled = true;     // <<< Mantém LED rodando
-        } else if (fpmTest.isExpired()) {
+            STB_outputEnabled = true;  // <<< Mantém LED rodando
+          } else if (fpmTest.isExpired()) {
             fpmAtual = 30.0;
             FreqDeTest = fpmAtual / 60.0;
             STB_outputEnabled = false;
             TESTE_calc = false;
-        } else {
+          } else {
             STB_outputEnabled = false;
             TESTE_calc = false;
+          }
+          break;
         }
-        break;
-    }
       case Mode::HOME:
         {
-          long newPos = encoder.read() / 8;
+          long newPos = encoder.read() / Sensib_Encoder;
           int delta = newPos - lastEncoderPos;
           if (delta != 0) {
-            int delta = newPos - lastEncoderPos;
             if (delta > 0) {  // Girando para a frente
               if (topLineIndex < totalLines - lineShowMsg) {
                 topLineIndex++;
@@ -743,6 +806,39 @@ void loop() {
               if (topLineIndex > 0) {
                 topLineIndex--;
               }
+            }
+            lastEncoderPos = newPos;
+          }
+          break;
+        }
+      case Mode::VIBROMETER:
+        {
+          long newPos = encoder.read() / Sensib_Encoder;
+          int delta = newPos - lastEncoderPos;
+          if (delta != 0) {
+            if (vibroState == VibroState::VIBRO_SELECTCALIB) {
+              timeCalib = constrain(timeCalib + (delta * 5), 5, 30);
+              saveData = setValor(dadosConfig, "TIMECALIB", String(timeCalib));
+            } else if (vibroState == VibroState::VIBRO_SELECTMEASURE) {
+              timeMeasure = constrain(timeMeasure + (delta * 10), 10, 60);
+              saveData = setValor(dadosConfig, "TIMEMEASURE", String(timeMeasure));
+            }
+            lastEncoderPos = newPos;
+          }
+          break;
+        }
+      case Mode::CONFIG:
+        {
+          long newPos = encoder.read() / Sensib_Encoder;
+          int delta = newPos - lastEncoderPos;
+          if (delta != 0) {
+            if (modeConfig == 1) {
+              if(modeCalibFatRpm == 1) step = 0.010;
+              else if (modeCalibFatRpm == 2) step = 0.100;
+              else step = 0.001;
+              step = delta*step;
+              CalibFat = constrain(CalibFat + step, minVal, maxVal);
+              setValor(dadosConfig, "CALIBFATRPM", String(CalibFat));
             }
             lastEncoderPos = newPos;
           }
@@ -773,7 +869,7 @@ void handleInput() {
       updateValuesRec();
     } else {
       currentMode = selectedMode;
-      //currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % static_cast<int>(Mode::NUM_MODES));
+      updateValuesRec();
     }
   }
   if (checkButtonDebounce(BUTTON_SET, lastSetState, lastDebounceTimeSet, 50000)) {
@@ -782,87 +878,106 @@ void handleInput() {
       inMenu = false;
     } else {
       if (selectedMode == Mode::VIBROMETER) {
-        // === Lógica do Encoder para ajustar o tempo ===
-        lastEncoderPos = 0;
-        long newPos = encoder.read() / 8;  // Lê a posição e reduz a sensibilidade
-        if (newPos != lastEncoderPos) {
-          int delta = newPos - lastEncoderPos;
-          switch (vibroState) {
-            case VibroState::VIBRO_CALIB:
-              // Ajusta o tempo de calibração em incrementos de 5 segundos
-              timeCalib = constrain(timeCalib + (delta * 5), 5, 30);
-              saveData = setValor(dadosConfig, "TIMECALIB", String(timeCalib));
-              break;
-            case VibroState::VIBRO_IDLE:
-              // Ajusta o tempo de medição em incrementos de 10 segundos
-              timeMeasure = constrain(timeMeasure + (delta * 10), 10, 60);
-              saveData = setValor(dadosConfig, "TIMEMEASURE", String(timeMeasure));
-              break;
-            default:
-              // Não faz nada em outros estados do vibrometro
-              break;
-          }
-          lastEncoderPos = newPos;
-        }
         switch (vibroState) {
           //Clique SET para iniciar
           case VibroState::VIBRO_HOME:
-            vibroState = VibroState::VIBRO_CALIB;
+            vibroState = VibroState::VIBRO_SELECTCALIB;
             break;
-          case VibroState::VIBRO_CONFIG:
-            //vibroState = VibroState::VIBRO_MEASURE;
-            //measureSeismicActivity();
+          case VibroState::VIBRO_SELECTCALIB:
+            vibroState = VibroState::VIBRO_CALIBRATING;
+            startCalibration(getValor(dadosConfig, "TIMECALIB").toInt());
             break;
-          case VibroState::VIBRO_MEASURE:
-            vibroState = VibroState::VIBRO_RESULT;
+          case VibroState::VIBRO_CALIBRATING:
+            //a função startCalibration que muda para próxima tela vibroState = VibroState::VIBRO_SELECTMEASURE;
             break;
-          case VibroState::VIBRO_RESULT:
+          case VibroState::VIBRO_SELECTMEASURE:
+            vibroState = VibroState::VIBRO_MEASURING;
+            startMeasurement(getValor(dadosConfig, "TIMEMEASURE").toInt());
+            break;
+          case VibroState::VIBRO_MEASURING:
+            //a função startMeasurement que muda para próxima tela vibroState = VibroState::VIBRO_MEASURERESULT;
+            break;
+          case VibroState::VIBRO_MEASURERESULT:
+            vibroState = VibroState::VIBRO_ABOUT;
+            break;
+          case VibroState::VIBRO_ABOUT:
             vibroState = VibroState::VIBRO_HOME;
             break;
           default:
             // Não faz nada em outros estados do vibrometro
             break;
         }
-      } else if (selectedMode == Mode::FREQUENCY){
-        modeFreq++;
-        if (modeFreq >=3) {
-          modeFreq = 0;
+      } else if (selectedMode == Mode::FREQUENCY) {
+        if(modeFreq == 0){
+          valInEncoder++;
+          if (valInEncoder >= 3) {
+            valInEncoder = 0;
+          }
         }
       } else if (selectedMode == Mode::RPM) {
-        inSubmenu = false;
         if (rpmValue >= 30) {
           fpm = rpmValue;
           //FPM recebe o valor de RPM
           setValor(dadosConfig, "FPM", String(fpm));
+          STB_calc = true;
           msgTimer.startTimer(2);  //Inicia a contagem para exibir a mensagem de gravando por 2 segundos
         }
       } else if (selectedMode == Mode::TEST) {
         fpmTest.startTimer(25);
-        modeFreq++;
-        if (modeFreq >=3) {
-          modeFreq = 0;
-        }
       } else if (selectedMode == Mode::LANTERN || currentMode == Mode::ABOUT) {
         inSubmenu = false;
+      } else if (selectedMode == Mode::CONFIG) {
+        if (modeConfig == 1){
+            modeCalibFatRpm++;
+            if (modeCalibFatRpm >= 3) {
+              modeCalibFatRpm = 0;
+            }
+        } else if (modeConfig == 2) { //reset de fabrica
+            idioma = 1;
+            timeMeasure = 30;
+            timeCalib = 10;
+            fpm = 1200;
+            dutyCycle = 4;
+            CalibFat = 1.000;
+            Serial.println("EEPROM vazia. Gravando valores padrao...");
+            // Defina seus valores padrão aqui
+            setValor(dadosConfig, "IDIOMA", "1");
+            setValor(dadosConfig, "TIMEMEASURE", "30");
+            setValor(dadosConfig, "TIMECALIB", "10");
+            setValor(dadosConfig, "FPM", "1200");
+            setValor(dadosConfig, "DUTY", "4");
+            setValor(dadosConfig, "CALIBFATRPM", "1.0");
+            // Salva os valores padrão na EEPROM
+            salvarDadosEEPROM(dadosConfig);
+        }
       } else {
         inSubmenu = !inSubmenu;
       }
     }
   }
-  if (checkButtonDebounce(BUTTON_DOUBLE, lastDoubleState, lastDebounceTimeDouble, 50000)) {
+  if (checkButtonDebounce(BUTTON_HALF, lastDoubleState, lastDebounceTimeDouble, 50000)) {
     if (inMenu) {
       currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % static_cast<int>(Mode::NUM_MODES));
     } else if (selectedMode == Mode::HOME) {
       if (topLineIndex < totalLines - lineShowMsg) {  // lineShowMsg = linhas cabem na tela
         topLineIndex++;
       }
-    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_CALIB) {
+    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_SELECTCALIB) {
       timeCalib = constrain(timeCalib - 5, 5, 30);
-    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_IDLE) {
+    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_SELECTMEASURE) {
       timeMeasure = constrain(timeMeasure - 10, 10, 60);
     } else if (currentMode == Mode::CONFIG) {
-      numIdioma = (numIdioma - 1 + 1) % 4 + 1;
-      setValor(dadosConfig, "IDIOMA", String(numIdioma));
+      if (modeConfig == 0) {
+        numIdioma = (numIdioma - 1 + 1) % 4 + 1;
+        setValor(dadosConfig, "IDIOMA", String(numIdioma));
+      } else if (modeConfig == 1) {
+        if(modeCalibFatRpm == 1) step = 0.010;
+        else if (modeCalibFatRpm == 2) step = 0.100;
+        else step = 0.001;
+        CalibFat -= step;
+        if (CalibFat < minVal) CalibFat = maxVal;
+        setValor(dadosConfig, "CALIBFATRPM", String(CalibFat));
+      }
     } else {
       if (selectedMode == Mode::FREQUENCY && !inSubmenu) {
         adjustFPM(0.5);
@@ -871,20 +986,29 @@ void handleInput() {
       }
     }
   }
-  if (checkButtonDebounce(BUTTON_HALF, lastHalfState, lastDebounceTimeHalf, 50000)) {
+  if (checkButtonDebounce(BUTTON_DOUBLE, lastHalfState, lastDebounceTimeHalf, 50000)) {
     if (inMenu) {
       currentMode = static_cast<Mode>((static_cast<int>(currentMode) - 1 + static_cast<int>(Mode::NUM_MODES)) % static_cast<int>(Mode::NUM_MODES));
     } else if (selectedMode == Mode::HOME) {
       if (topLineIndex > 0) {
         topLineIndex--;
       }
-    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_CALIB) {
+    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_SELECTCALIB) {
       timeCalib = constrain(timeCalib + 5, 5, 30);
-    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_IDLE) {
+    } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_SELECTMEASURE) {
       timeMeasure = constrain(timeMeasure + 10, 10, 60);
     } else if (currentMode == Mode::CONFIG) {
-      numIdioma = (numIdioma - 1 - 1 + 4) % 4 + 1;
-      setValor(dadosConfig, "IDIOMA", String(numIdioma));
+      if (modeConfig == 0) {
+        numIdioma = (numIdioma - 1 - 1 + 4) % 4 + 1;
+        setValor(dadosConfig, "IDIOMA", String(numIdioma));
+      } else if (modeConfig == 1) {
+        if(modeCalibFatRpm == 1) step = 0.010;
+        else if (modeCalibFatRpm == 2) step = 0.100;
+        else step = 0.001;
+        CalibFat += step;
+        if (CalibFat > maxVal) CalibFat = minVal;
+        setValor(dadosConfig, "CALIBFATRPM", String(CalibFat));
+      }
     } else {
       if (selectedMode == Mode::FREQUENCY && !inSubmenu) {
         adjustFPM(2.0);
@@ -894,10 +1018,16 @@ void handleInput() {
     }
   }
   if (checkButtonDebounce(BUTTON_ENC, lastEncState, lastDebounceTimeEnc, 50000)) {
-    inEncoder = !inEncoder;
-    valInEncoder++;
-    if (valInEncoder >=3) {
-      valInEncoder = 0;
+    if (selectedMode == Mode::FREQUENCY) {
+      modeFreq++;
+      if (modeFreq >= 3) {
+        modeFreq = 0;
+      }
+    } else if (selectedMode == Mode::CONFIG){
+      modeConfig++;
+        if (modeConfig >= 3) {
+          modeConfig = 0;
+        }
     }
   }
 }
@@ -966,6 +1096,17 @@ void drawScreen(Mode mode) {
   } else if (currentMode == Mode::CONFIG) {
     display.println(getValor(displayConfig, "SELECTLANG", idioma));
     display.println(getNomeIdioma(numIdioma));
+    display.println("Fator calib RPM:");
+    display.println(CalibFat,3);
+    if (modeConfig == 0) display.setCursor(95, 22);
+    if (modeConfig == 1) display.setCursor(95, 37);
+    if (modeConfig == 2) display.setCursor(95, 47);
+    display.print("<");
+    if(modeCalibFatRpm == 0) display.setCursor(24, 40);
+    if(modeCalibFatRpm == 1) display.setCursor(18, 40);
+    if (modeCalibFatRpm == 2) display.setCursor(12, 40);
+    display.println("_");
+    display.println("Factory Reset");
   } else if (currentMode == Mode::FREQUENCY) {
     display.setTextSize(2);
     display.setCursor(0, 14);
@@ -973,7 +1114,7 @@ void drawScreen(Mode mode) {
     display.setTextSize(1);
     display.setCursor(70, 22);
     display.print(getValor(displayConfig, "FPM", idioma));
-    if (modeFreq == 0) { 
+    if (modeFreq == 0) {
       display.setCursor(95, 22);
       display.print("<");
     }
@@ -984,39 +1125,48 @@ void drawScreen(Mode mode) {
     display.print(getValor(displayConfig, "PHASE", idioma) + " ");
     display.print(STB_phaseDegrees);
     display.println((char)247);
-    if (modeFreq == 1) { 
+    if (modeFreq == 1) {
       display.setCursor(95, 46);
       display.print("<");
     }
     display.setCursor(0, 56);
     display.print("Duty: ");
     display.print(dutyCycle);
-    if (modeFreq == 2) { 
+    if (modeFreq == 2) {
       display.setCursor(95, 56);
       display.print("<");
     }
+    if(valInEncoder == 0){
+      display.setCursor(40, 25);
+    }
+    if(valInEncoder == 1){
+      display.setCursor(27, 25);
+    }
+    if(valInEncoder == 2){
+      display.setCursor(14, 25);
+    }
+    display.print("_");
   } else if (currentMode == Mode::VIBROMETER) {
     if (AcelAvailable) {
       switch (vibroState) {
         case VibroState::VIBRO_HOME:
           display.println(getValor(displayConfig, "CALIBRATE", idioma));
           break;
-        case VibroState::VIBRO_CALIB:
-          if (!isCalibrating) {
-            display.print(getValor(displayConfig, "SELECTTIME", idioma));
-            display.print(timeCalib);
-            display.println("s");
-            display.println("");
-            display.println(getValor(displayConfig, "SETCALIB", idioma));
-          } else {
-            display.println(getValor(displayConfig, "CALIBRATING", idioma));
-            display.println("");
-            display.print(getValor(displayConfig, "RESTTIME", idioma));
-            display.print(secondsLeftCalib);
-            display.println("s");
-          }
+        case VibroState::VIBRO_SELECTCALIB:
+          display.print(getValor(displayConfig, "SELECTTIME", idioma));
+          display.print(timeCalib);
+          display.println("s");
+          display.println("");
+          display.println(getValor(displayConfig, "SETCALIB", idioma));
           break;
-        case VibroState::VIBRO_IDLE:
+        case VibroState::VIBRO_CALIBRATING:
+          display.println(getValor(displayConfig, "CALIBRATING", idioma));
+          display.println("");
+          display.print(getValor(displayConfig, "RESTTIME", idioma));
+          display.print(secondsLeftCalib);
+          display.println("s");
+          break;
+        case VibroState::VIBRO_SELECTMEASURE:
           display.print(getValor(displayConfig, "SELECTTIME", idioma));
           display.print(timeMeasure);
           display.println("s");
@@ -1024,14 +1174,14 @@ void drawScreen(Mode mode) {
           display.println(getValor(displayConfig, "MSGIDLE1", idioma));
           display.println(getValor(displayConfig, "MSGIDLE2", idioma));
           break;
-        case VibroState::VIBRO_CONFIG:
+        case VibroState::VIBRO_MEASURING:
           display.println(getValor(displayConfig, "MEASURE", idioma));
           display.println("");
           display.print(getValor(displayConfig, "RESTTIME", idioma));
           display.print(secondsLeft);
           display.println("s");
           break;
-        case VibroState::VIBRO_MEASURE:
+        case VibroState::VIBRO_MEASURERESULT:
           display.print("PA: ");
           display.print(aPeak, 3);
           display.println("m/s2");
@@ -1048,7 +1198,7 @@ void drawScreen(Mode mode) {
           display.print(freqDominant, 2);
           display.println("Hz");
           break;
-        case VibroState::VIBRO_RESULT:
+        case VibroState::VIBRO_ABOUT:
           display.println(getValor(displayConfig, "RESULTPA", idioma));
           display.println(getValor(displayConfig, "RESULTRMSA", idioma));
           display.println(getValor(displayConfig, "RESULTDP", idioma));
