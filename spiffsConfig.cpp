@@ -199,3 +199,133 @@ void testSpiffs(){
   deleteFile(SPIFFS, "/test.txt");
   Serial.println("Test complete");
 }
+
+File csvFile;
+String currentCsvName = "";
+String csvPrefix = "/medicao_";
+String csvExtension = ".csv";
+int MAX_CSV_FILES = 10;
+
+/*bool startCsvLog(int indexFile) {
+    std::vector<int> fileIndices;
+
+    // Varre os arquivos existentes
+    File root = SPIFFS.open("/");
+    if (!root) {
+        Serial.println("❌ Erro ao abrir SPIFFS");
+        return false;
+    }
+
+    File file = root.openNextFile();
+    while (file) {
+        String name = String(file.name());
+        if (name.startsWith(csvPrefix) && name.endsWith(csvExtension)) {
+            int start = csvPrefix.length();
+            int end = name.indexOf('.', start);
+            int num = name.substring(start, end).toInt();
+            fileIndices.push_back(num);
+        }
+        file = root.openNextFile();
+    }
+
+    // Ordena índices para facilitar
+    std::sort(fileIndices.begin(), fileIndices.end());
+
+    // Remove arquivos mais antigos se ultrapassar MAX_CSV_FILES - 1
+    while (fileIndices.size() >= MAX_CSV_FILES) {
+        int delIndex = fileIndices.front();  // remove o mais antigo
+        String delName = csvPrefix + String(delIndex) + csvExtension;
+        SPIFFS.remove(delName);
+        Serial.printf("🧹 Arquivo antigo removido: %s\n", delName.c_str());
+        fileIndices.erase(fileIndices.begin());
+    }
+
+    currentCsvName = csvPrefix + String(indexFile) + csvExtension;
+
+    // Cria o novo arquivo CSV
+    csvFile = SPIFFS.open(currentCsvName, FILE_WRITE);
+    if (!csvFile) {
+        Serial.println("❌ Erro ao criar arquivo CSV!");
+        return false;
+    }
+
+    // Cabeçalho CSV
+    csvFile.println("SampleRate,Tempo (s),Aceleração (m/s²),X,Y,Z");
+    csvFile.flush();
+    Serial.printf("📁 Iniciado log em: %s\n", currentCsvName.c_str());
+    return true;
+}*/
+bool startCsvLog(int indexFile) {
+    std::vector<int> fileIndices;
+
+    // --- Varre os arquivos existentes ---
+    File root = SPIFFS.open("/");
+    if (!root) {
+        Serial.println("❌ Erro ao abrir SPIFFS");
+        return false;
+    }
+
+    File file = root.openNextFile();
+    while (file) {
+        String name = String(file.name());
+        // Garante que o nome está padronizado (sem duplo '/')
+        if (name.startsWith("/")) name.remove(0, 1);
+
+        if (name.startsWith("medicao_") && name.endsWith(".csv")) {
+            int start = String("medicao_").length();
+            int end = name.indexOf('.', start);
+            if (end > start) {
+                int num = name.substring(start, end).toInt();
+                if (num > 0) fileIndices.push_back(num);
+            }
+        }
+
+        file = root.openNextFile();
+    }
+    root.close();
+
+    // --- Ordena e remove arquivos mais antigos ---
+    std::sort(fileIndices.begin(), fileIndices.end());
+
+    while ((int)fileIndices.size() >= MAX_CSV_FILES) {
+        int delIndex = fileIndices.front();  // menor número = mais antigo
+        String delName = csvPrefix + String(delIndex) + csvExtension;
+        if (SPIFFS.exists(delName)) {
+            SPIFFS.remove(delName);
+            Serial.printf("🧹 Arquivo antigo removido: %s\n", delName.c_str());
+        } else {
+            Serial.printf("⚠️ Arquivo esperado não encontrado: %s\n", delName.c_str());
+        }
+        fileIndices.erase(fileIndices.begin());
+    }
+
+    // --- Cria o novo arquivo CSV ---
+    currentCsvName = csvPrefix + String(indexFile) + csvExtension;
+    csvFile = SPIFFS.open(currentCsvName, FILE_WRITE);
+
+    if (!csvFile) {
+        Serial.println("❌ Erro ao criar arquivo CSV!");
+        return false;
+    }
+
+    // Cabeçalho CSV
+    csvFile.println("SampleRate,Tempo (s),Aceleração (m/s²),X,Y,Z");
+    csvFile.flush();
+
+    Serial.printf("📁 Iniciado log em: %s\n", currentCsvName.c_str());
+    return true;
+}
+void logCsvSample(float sampleRate,float timeSec, float acc, float x, float y, float z) {
+    if (!csvFile) return;
+    csvFile.printf("%.1f,%.3f,%.5f,%.5f,%.5f,%.5f\n", sampleRate, timeSec, acc, x, y, z);
+    csvFile.flush();
+}
+bool endCsvLog() {
+    if (csvFile) {
+        csvFile.close();
+        Serial.printf("✅ Log salvo em: %s\n", currentCsvName.c_str());
+        return true;
+    }else{
+      return false;
+    }
+}

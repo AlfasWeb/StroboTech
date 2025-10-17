@@ -93,31 +93,3 @@ void limparFlashParcial(uint32_t addrIni, uint32_t addrFim) {
     addrIni += pagina;
   }
 }
-
-/*void exibirImagemDaFlash(
-  uint32_t enderecoInicial,
-  int largura,
-  int altura,
-  int offsetX,
-  int offsetY,
-  void (*pixelHandler)(int x, int y, bool on))
-  {
-  int bytesPorLinha = largura / 8;
-  uint8_t linhaBuffer[bytesPorLinha];
-
-  for (int y = 0; y < altura; y++) {
-    uint32_t enderecoLinha = enderecoInicial + (y * bytesPorLinha);
-    readData(enderecoLinha, linhaBuffer, bytesPorLinha);
-
-    for (int byteIndex = 0; byteIndex < bytesPorLinha; byteIndex++) {
-      uint8_t b = linhaBuffer[byteIndex];
-      for (int bit = 0; bit < 8; bit++) {
-        int pixelX = offsetX + (byteIndex * 8) + (7 - bit);
-        int pixelY = offsetY + y;
-
-        bool isOn = b & (1 << bit);
-        pixelHandler(pixelX, pixelY, isOn);
-      }
-    }
-  }
-}*/
