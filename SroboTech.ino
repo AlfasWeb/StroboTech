@@ -713,30 +713,87 @@ void setupButtons() {
       font-size: 14px;
       margin: 10px 0;
     }
+
+    /* ===== Estilo das Abas ===== */
+    .tab {
+      overflow: hidden;
+      background-color: #333;
+      display: flex;
+      justify-content: center;
+    }
+    .tab button {
+      background-color: inherit;
+      border: none;
+      outline: none;
+      cursor: pointer;
+      padding: 14px 20px;
+      color: white;
+      transition: background-color 0.3s;
+      font-size: 16px;
+    }
+    .tab button:hover {
+      background-color: #575757;
+    }
+    .tab button.active {
+      background-color: #4CAF50;
+    }
+    .tabcontent {
+      display: none;
+    }
     </style>
     </head>
     <body>
 
-    <div class="container">
-      <h2>Atualização OTA do Firmware</h2>
-      <p>Escolha o arquivo .bin do firmware para atualizar seu dispositivo</p>
-      <form id="uploadForm">
-        <input type="file" name="update" id="updateFile" accept=".bin" required><br>
-        <input type="submit" value="Atualizar Firmware">
-        <div class="progress"><div class="progress-bar" id="progressBar">0%</div></div>
-      </form>
-      <p>Atenção: Não desligue o dispositivo durante a atualização!</p>
+    <!-- Menu de Abas -->
+    <div class="tab">
+      <button class="tablinks active" onclick="openTab(event, 'arquivos')">Arquivos</button>
+      <button class="tablinks" onclick="openTab(event, 'update')">Atualização OTA</button>
     </div>
 
-    <div class="container">
-      <h2>Arquivos CSV do Vibrometro</h2>
-      <div id="fileList">Carregando...</div>
+    <!-- ABA 1 - LISTAR ARQUIVOS -->
+    <div id="arquivos" class="tabcontent" style="display:block;">
+      <div class="container">
+        <h2>Arquivos CSV do Vibrometro</h2>
+        <div id="fileList">Carregando...</div>
+      </div>
+    </div>
+
+    <!-- ABA 2 - ATUALIZAÇÃO OTA -->
+    <div id="update" class="tabcontent">
+      <div class="container">
+        <h2>Atualização OTA do Firmware</h2>
+        <p>Escolha o arquivo .bin do firmware para atualizar seu dispositivo</p>
+        <form id="uploadForm">
+          <input type="file" name="update" id="updateFile" accept=".bin" required><br>
+          <input type="submit" value="Atualizar Firmware">
+          <div class="progress"><div class="progress-bar" id="progressBar">0%</div></div>
+        </form>
+        <p>Atenção: Não desligue o dispositivo durante a atualização!</p>
+      </div>
     </div>
 
     <script>
     const form = document.getElementById('uploadForm');
     const progressBar = document.getElementById('progressBar');
     const fileList = document.getElementById('fileList');
+
+    // ---- Controle das Abas ----
+    function openTab(evt, tabName) {
+      const tabcontent = document.getElementsByClassName('tabcontent');
+      const tablinks = document.getElementsByClassName('tablinks');
+
+      for (let i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].style.display = 'none';
+      }
+      for (let i = 0; i < tablinks.length; i++) {
+        tablinks[i].classList.remove('active');
+      }
+      document.getElementById(tabName).style.display = 'block';
+      evt.currentTarget.classList.add('active');
+
+      // Recarregar lista quando abrir aba de arquivos
+      if (tabName === 'arquivos') loadFiles();
+    }
 
     // ---- Upload OTA ----
     form.addEventListener('submit', function(e) {
@@ -818,6 +875,7 @@ void setupButtons() {
     </body>
     </html>
     )rawliteral";
+
 
 #endif
 
@@ -1157,38 +1215,37 @@ void loop() {
         break;
       case Mode::TEST:
         {
-          static unsigned long ultimoTempo = 0;
-          static float fpmAtual = 30.0;
-          static const float passo = 30.0;
-          static const unsigned long intervaloTeste = 500;  // 2 segundos entre passos
+            static unsigned long ultimoTempo = 0;
+            static float fpmAtual = 30.0;
+            static const float passo = 30.0;
+            static const unsigned long intervaloTeste = 500;
 
-          unsigned long agora = millis();
+            unsigned long agora = millis();
 
-          if (fpmTest.isRunning()) {
-            if (agora - ultimoTempo >= intervaloTeste) {
-              TESTE_fpm = fpmAtual;
-              TESTE_calc = true;  // <<< Ativa cálculo com TESTE_fpm
-              updateValues();
+            if (fpmTest.isRunning()) {
+                if (agora - ultimoTempo >= intervaloTeste) {
+                    TESTE_fpm = fpmAtual;
+                    TESTE_calc = true;
+                    updateValues();
 
-              fpmAtual += passo;
-              FreqDeTest = fpmAtual / 60.0;
+                    fpmAtual += passo;
+                    FreqDeTest = fpmAtual / 60.0;
 
-              if (fpmAtual >= maxFPM) {
-                fpmAtual = 30.0;  // reinicia ciclo
-              }
-              ultimoTempo = agora;
+                    if (fpmAtual >= maxFPM) {
+                        fpmAtual = 30.0;  // reinicia ciclo
+                    }
+                    ultimoTempo = agora;
+                }
+                STB_outputEnabled = true;
+            } else {
+                // 🔹 Reset de variáveis ao encerrar TESTE
+                fpmAtual = 30.0;
+                FreqDeTest = 0.0;     // <<< Zera valor antigo
+                STB_outputEnabled = false;
+                TESTE_calc = false;
+                ultimoTempo = 0;      // <<< Garante recomeço limpo
             }
-            STB_outputEnabled = true;  // <<< Mantém LED rodando
-          } else if (fpmTest.isExpired()) {
-            fpmAtual = 30.0;
-            FreqDeTest = fpmAtual / 60.0;
-            STB_outputEnabled = false;
-            TESTE_calc = false;
-          } else {
-            STB_outputEnabled = false;
-            TESTE_calc = false;
-          }
-          break;
+            break;
         }
       case Mode::HOME:
         {
