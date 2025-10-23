@@ -1699,19 +1699,19 @@ void drawScreen(Mode mode) {
           break;
         case VibroState::VIBRO_MEASURERESULT:
           display.print("PA: ");
-          display.print(aPeak, 3);
-          display.println("m/s2");
+          display.print(aPeak* 1000, 4);
+          display.println("mm/s2");
           display.print("RMS A: ");
-          display.print(aRMS, 3);
-          display.println("m/s2");
+          display.print(aRMS* 1000, 4);
+          display.println("mm/s2");
           display.print("DP: ");
-          display.print(stdDev, 3);
-          display.println("m/s2");
+          display.print(stdDev* 1000, 4);
+          display.println("mm/s2");
           display.print("V RMS: ");
-          display.print(vRMS, 3);
-          display.println("m/s");
+          display.print(vRMS* 1000, 4);
+          display.println("mm/s2");
           display.print("FD: ");
-          display.print(freqDominant, 2);
+          display.print(freqDominant* 1000, 2);
           display.println("Hz");
           break;
         case VibroState::VIBRO_ABOUT:
