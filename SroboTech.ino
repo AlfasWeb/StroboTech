@@ -16,11 +16,13 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <Update.h>
 
-WebServer server(80);
 bool otaAtivo = false;
-#define GERAHTML 0
+String VERSION_INFO = "Grupo Alfas - 2025 - ";
+String VERSION_NUM = "V1.0";
+String VERSION_SHOW = VERSION_INFO + VERSION_NUM;
 
 // ==== Pinos ====
 #define ENCODER_PIN_A 33
@@ -57,56 +59,70 @@ bool lsmAvailable = false;
 bool AcelAvailable = false;
 
 // ==== Menu ====
-  enum class Mode { HOME, FREQUENCY, RPM, LANTERN, VIBROMETER, TEST, ABOUT, CONFIG, NUM_MODES };
-  Mode currentMode = Mode::HOME;
-  Mode selectedMode = Mode::HOME;
-  bool inMenu = true;
-  bool inSubmenu = false;
-  bool inEncoder = false;
-  int valInEncoder = 0;
-  int modeFreq = 0;
-  int modeConfig = 0;
-  int modeCalibFatRpm = 0;
-  int modeMeasure = 0;
+enum class Mode { HOME,
+                  FREQUENCY,
+                  RPM,
+                  LANTERN,
+                  VIBROMETER,
+                  TEST,
+                  ABOUT,
+                  CONFIG,
+                  NUM_MODES };
+Mode currentMode = Mode::HOME;
+Mode selectedMode = Mode::HOME;
+bool inMenu = true;
+bool inSubmenu = false;
+bool inEncoder = false;
+int valInEncoder = 0;
+int modeFreq = 0;
+int modeConfig = 0;
+int modeCalibFatRpm = 0;
+int modeMeasure = 0;
 // ==== FIM Menu ====
 
 // ==== Variáveis do Vibrometro ====
-  enum class VibroState { VIBRO_HOME, VIBRO_SELECTCALIB, VIBRO_CALIBRATING, VIBRO_SELECTMEASURE, VIBRO_MEASURING, VIBRO_MEASURERESULT, VIBRO_ABOUT };
-  VibroState vibroState = VibroState::VIBRO_HOME;
-  // ==== Medição ====
-  float ax, ay, az;
-  //-------------------------------------
-  // ==== Variáveis de Gravação do tempo de vibração ====
-  int timeCalib = 15;
+enum class VibroState { VIBRO_HOME,
+                        VIBRO_SELECTCALIB,
+                        VIBRO_CALIBRATING,
+                        VIBRO_SELECTMEASURE,
+                        VIBRO_MEASURING,
+                        VIBRO_MEASURERESULT,
+                        VIBRO_ABOUT };
+VibroState vibroState = VibroState::VIBRO_HOME;
+// ==== Medição ====
+float ax, ay, az;
+//-------------------------------------
+// ==== Variáveis de Gravação do tempo de vibração ====
+int timeCalib = 15;
 // ==== FIM Variáveis do Vibrometro ====
 
 float FreqDeTest = 0;
 //-------------------------------------
 // Lista de mensagens
-  String lines[] = {
-    "Um agradecimento es-",
-    "pecial para todos os",
-    "professores do SENAI",
-    "que nos incentivaram",
-    "e nos orientaram ate",
-    "o fim.",
-    "Sempre acreditando",
-    "mais do que nos mesmo.",
-    "",
-    "Nossos professores:",
-    "Evandro Padilha",
-    "Renato L. Cruz",
-    "Vitor Santarosa",
-    "Alex Penteado",
-    "Bruno de Campos",
-    "Fernando A. Bosco",
-    "Fabio Camarinha",
-    "Gabriela Viana"
-  };
-  const int totalLines = sizeof(lines) / sizeof(lines[0]);
-  int topLineIndex = 0;
-  // Índice da linha superior visível
-  int lineShowMsg = 6;
+String lines[] = {
+  "Um agradecimento es-",
+  "pecial para todos os",
+  "professores do SENAI",
+  "que nos incentivaram",
+  "e nos orientaram ate",
+  "o fim.",
+  "Sempre acreditando",
+  "mais do que nos mesmo.",
+  "",
+  "Nossos professores:",
+  "Evandro Padilha",
+  "Renato L. Cruz",
+  "Vitor Santarosa",
+  "Alex Penteado",
+  "Bruno de Campos",
+  "Fernando A. Bosco",
+  "Fabio Camarinha",
+  "Gabriela Viana"
+};
+const int totalLines = sizeof(lines) / sizeof(lines[0]);
+int topLineIndex = 0;
+// Índice da linha superior visível
+int lineShowMsg = 6;
 // ==============
 // ==== Temporizador ====
 struct TimerMicros {
@@ -142,119 +158,116 @@ bool TESTE_calc = false;
 float TESTE_fpm = 0;
 
 // ==== RPM ====
-  int rpmValue = 0;
-  float CalibFat = 0.555;    // fator inicial
-  float step = 0.000;        // passo de variação
-  float minVal = 0.000;      // limite mínimo
-  float maxVal = 4.000;      // limite máximo
+int rpmValue = 0;
+float CalibFat = 0.555;  // fator inicial
+float step = 0.000;      // passo de variação
+float minVal = 0.000;    // limite mínimo
+float maxVal = 4.000;    // limite máximo
 
-  volatile int count = 0;
-  unsigned long lastMillis = 0;
-  int divisor = 1;
+volatile int count = 0;
+unsigned long lastMillis = 0;
+int divisor = 1;
 
-  void loadRPM(){
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastMillis >= 1000) {
-      lastMillis = currentMillis;
-      
-      rpmValue = (count * 60) / divisor*CalibFat;
-      
-      count = 0;
-    }
+void loadRPM() {
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastMillis >= 1000) {
+    lastMillis = currentMillis;
+
+    rpmValue = (count * 60) / divisor * CalibFat;
+
+    count = 0;
   }
+}
 
-  void countWhiteStripe() {
-    count++;
-  }
-
+void countWhiteStripe() {
+  count++;
+}
 // ==== FIM RPM ====
-
 // ==== STROBOSCOPIO ==== //
-  // ==== Variáveis do Modo Estroboscópio ====
-  int fpm = 683;
-  const int minFPM = 30;     // Limite mínimo de FPM
-  const int maxFPM = 35000;  // Limite máximo de FPM
+// ==== Variáveis do Modo Estroboscópio ====
+int fpm = 683;
+const int minFPM = 30;     // Limite mínimo de FPM
+const int maxFPM = 35000;  // Limite máximo de FPM
 
-  int dutyCycle = 4;
-  const int minDuty = 1;
-  const int maxDuty = 100;
+int dutyCycle = 4;
+const int minDuty = 1;
+const int maxDuty = 100;
 
 
-  // ==== Variáveis do Modo Estroboscópio ====
-  long STB_lastEncoderPos = 0;
-  int STB_phaseDegrees = 0;
-  // Ajuste de fase em graus
-  unsigned long STB_partTime = 1000000;
-  // Duração de meio ciclo em microssegundos
-  unsigned long STB_phaseDelayMicros = 0;
-  // Atraso de fase em microssegundos
-  bool STB_calc = true;
-  // Indica se os cálculos precisam ser refeitos
-  bool STB_firstPulse = true;
-  // Para aplicar a fase apenas uma vez
-  bool STB_outputEnabled = false;
-  // Controla se a saída está ativa
-  hw_timer_t *timer = NULL;
-  portMUX_TYPE STB_timerMux = portMUX_INITIALIZER_UNLOCKED;
-  volatile bool STB_pulseState = false;
+// ==== Variáveis do Modo Estroboscópio ====
+long STB_lastEncoderPos = 0;
+int STB_phaseDegrees = 0;
+// Ajuste de fase em graus
+unsigned long STB_partTime = 1000000;
+// Duração de meio ciclo em microssegundos
+unsigned long STB_phaseDelayMicros = 0;
+// Atraso de fase em microssegundos
+bool STB_calc = true;
+// Indica se os cálculos precisam ser refeitos
+bool STB_firstPulse = true;
+// Para aplicar a fase apenas uma vez
+bool STB_outputEnabled = false;
+// Controla se a saída está ativa
+hw_timer_t *timer = NULL;
+portMUX_TYPE STB_timerMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool STB_pulseState = false;
 
-  volatile unsigned long STB_timeHigh = 0;
-  volatile unsigned long STB_timeLow = 0;
-  // ==== Função de interrupção do timer. Alterna o estado do LED e aplica o atraso de fase na primeira chamada. ====
-  void IRAM_ATTR onTimer() {
-    portENTER_CRITICAL_ISR(&STB_timerMux);
+volatile unsigned long STB_timeHigh = 0;
+volatile unsigned long STB_timeLow = 0;
+// ==== Função de interrupção do timer. Alterna o estado do LED e aplica o atraso de fase na primeira chamada. ====
+void IRAM_ATTR onTimer() {
+  portENTER_CRITICAL_ISR(&STB_timerMux);
 
-    if (!STB_outputEnabled) {
-      GPIO.out_w1tc = (1 << LED_PIN);  // Força LOW
-      portEXIT_CRITICAL_ISR(&STB_timerMux);
-      return;
-    }
-
-    // Aplica fase apenas no primeiro pulso
-    if (STB_firstPulse && STB_phaseDelayMicros > 0) {
-      timerAlarm(timer, STB_phaseDelayMicros, true, 0);
-      STB_firstPulse = false;
-      portEXIT_CRITICAL_ISR(&STB_timerMux);
-      return;
-    }
-
-    // Alterna o LED
-    STB_pulseState = !STB_pulseState;
-    if (STB_pulseState) {
-      GPIO.out_w1ts = (1 << LED_PIN);  // HIGH
-    } else {
-      GPIO.out_w1tc = (1 << LED_PIN);  // LOW
-    }
-
-    // Define próximo intervalo: HIGH ou LOW
-    unsigned long nextInterval = STB_pulseState ? STB_timeHigh : STB_timeLow;
-    timerAlarm(timer, nextInterval, true, 0);
-
+  if (!STB_outputEnabled) {
+    GPIO.out_w1tc = (1 << LED_PIN);  // Força LOW
     portEXIT_CRITICAL_ISR(&STB_timerMux);
+    return;
   }
-  // Atualiza os valores com base na entrada de FPM. Recalcula os tempos de ciclo e atraso de fase.
-  void updateValues() {
-    // Tempo total de ciclo em microssegundos (um ciclo completo do FPM)
-    unsigned long cycleTimeMicros = 60000000UL / fpm;
-    if (TESTE_calc) {
-      cycleTimeMicros = 60000000UL / TESTE_fpm;
-    }
-    // Duty mínimo de 1% para flashes curtos
-    float dutyFraction = (dutyCycle < 1) ? 0.01f : ((float)dutyCycle / 100.0f);
 
-    // Calcula tempo de HIGH e LOW do LED
-    STB_timeHigh = cycleTimeMicros * dutyFraction;
-    STB_timeLow = cycleTimeMicros - STB_timeHigh;
-
-    // Calcula o atraso de fase
-    STB_phaseDelayMicros = (STB_phaseDegrees / 360.0f) * cycleTimeMicros;
-
-    // Prepara para o primeiro pulso
-    STB_firstPulse = true;
-    STB_calc = false;
+  // Aplica fase apenas no primeiro pulso
+  if (STB_firstPulse && STB_phaseDelayMicros > 0) {
+    timerAlarm(timer, STB_phaseDelayMicros, true, 0);
+    STB_firstPulse = false;
+    portEXIT_CRITICAL_ISR(&STB_timerMux);
+    return;
   }
+
+  // Alterna o LED
+  STB_pulseState = !STB_pulseState;
+  if (STB_pulseState) {
+    GPIO.out_w1ts = (1 << LED_PIN);  // HIGH
+  } else {
+    GPIO.out_w1tc = (1 << LED_PIN);  // LOW
+  }
+
+  // Define próximo intervalo: HIGH ou LOW
+  unsigned long nextInterval = STB_pulseState ? STB_timeHigh : STB_timeLow;
+  timerAlarm(timer, nextInterval, true, 0);
+
+  portEXIT_CRITICAL_ISR(&STB_timerMux);
+}
+// Atualiza os valores com base na entrada de FPM. Recalcula os tempos de ciclo e atraso de fase.
+void updateValues() {
+  // Tempo total de ciclo em microssegundos (um ciclo completo do FPM)
+  unsigned long cycleTimeMicros = 60000000UL / fpm;
+  if (TESTE_calc) {
+    cycleTimeMicros = 60000000UL / TESTE_fpm;
+  }
+  // Duty mínimo de 1% para flashes curtos
+  float dutyFraction = (dutyCycle < 1) ? 0.01f : ((float)dutyCycle / 100.0f);
+
+  // Calcula tempo de HIGH e LOW do LED
+  STB_timeHigh = cycleTimeMicros * dutyFraction;
+  STB_timeLow = cycleTimeMicros - STB_timeHigh;
+
+  // Calcula o atraso de fase
+  STB_phaseDelayMicros = (STB_phaseDegrees / 360.0f) * cycleTimeMicros;
+
+  // Prepara para o primeiro pulso
+  STB_firstPulse = true;
+  STB_calc = false;
+}
 // Fim Stroboscópio
-
 // ==== Ajusta o FPM multiplicando-o por um fator ====
 void adjustFPM(float factor) {
   fpm = constrain(fpm * factor, minFPM, maxFPM);
@@ -272,299 +285,277 @@ bool checkButtonDebounce(uint8_t pin, bool &lastState, unsigned long &lastDeboun
 }
 //-------------------------------------
 // ==== Funçoes do Vibrometro calibrar e medir ====
-  // --- VARIÁVEIS GLOBAIS ---
-  //logCsvSample((timeBuffer[sampleCount]*10)/3, acc, x, y, z);
+// --- VARIÁVEIS GLOBAIS ---
+bool isCalibrating = false;
+bool isMeasuring = false;
+int SAMPLE_RATE = 200;
+#define MAX_FFT_SIZE 2048
+int FFT_SIZE = 512;  //Resolução da frequência 256, 512 ou 1024
+// Define variável para armazenar o tipo de janela FFT
+// Exemplo: escolha dinâmica (pode vir de menu, config, etc)
+bool FFTUH = false;  // se true → usa Hanning, se false → usa Hamming
 
-  bool isCalibrating = false;
-  bool isMeasuring = false;
-  float SAMPLE_RATE = 200.0f;
-  #define MAX_FFT_SIZE 2048
-  int FFT_SIZE = 512;     //Resolução da frequência 256, 512 ou 1024
-  // Define variável para armazenar o tipo de janela FFT
-  // Exemplo: escolha dinâmica (pode vir de menu, config, etc)
-  bool FFTUH = false; // se true → usa Hanning, se false → usa Hamming
+unsigned long calibrationStartTime = 0;
+unsigned long calibrationDuration = 0;
+unsigned long lastSampleTime = 0;
 
-  unsigned long calibrationStartTime = 0;
-  unsigned long calibrationDuration = 0;
-  unsigned long lastSampleTime = 0;
+int samplesRemaining = 0;
 
-  int samplesRemaining = 0;
+float offsetX = 0;
+float offsetY = 0;
+float offsetZ = 0;
 
-  float offsetX = 0;
-  float offsetY = 0;
-  float offsetZ = 0;
+float accBuffer[MAX_FFT_SIZE];
+float imagBuffer[MAX_FFT_SIZE];
+float timeBuffer[MAX_FFT_SIZE];
+float velocityXBuffer[MAX_FFT_SIZE];
+float velocityYBuffer[MAX_FFT_SIZE];
+float velocityZBuffer[MAX_FFT_SIZE];
 
-  float accBuffer[MAX_FFT_SIZE];
-  float imagBuffer[MAX_FFT_SIZE];
-  float timeBuffer[MAX_FFT_SIZE];
-  float velocityXBuffer[MAX_FFT_SIZE];
-  float velocityYBuffer[MAX_FFT_SIZE];
-  float velocityZBuffer[MAX_FFT_SIZE];
+float aPeak = 0;
+float aRMS = 0;
+float vRMS = 0;
+float stdDev = 0;
+float freqDominant = 0;
 
-  float aPeak = 0;
-  float aRMS = 0;
-  float vRMS = 0;
-  float stdDev = 0;
-  float freqDominant = 0;
+int sampleCount = 0;
+int secondsLeftCalib = 0;
+int secondsLeft = 0;
 
-  int sampleCount = 0;
-  int secondsLeftCalib = 0;
-  int secondsLeft = 0;
+// FFT
+ArduinoFFT<float> FFT = ArduinoFFT<float>();
 
-  // FFT
-  ArduinoFFT<float> FFT = ArduinoFFT<float>();
+// --- CALIBRAÇÃO ---
+void startCalibration(int durationSeconds) {
+  isCalibrating = true;
+  calibrationDuration = durationSeconds * 1000UL;
+  calibrationStartTime = millis();
+  offsetX = 0;
+  offsetY = 0;
+  offsetZ = 0;
+  sampleCount = 0;
+  secondsLeftCalib = durationSeconds;
+  Serial.println("Iniciando calibração...");
+}
+void updateCalibration() {
+  if (!isCalibrating) return;
 
-  // --- CALIBRAÇÃO ---
-  void startCalibration(int durationSeconds) {
-      isCalibrating = true;
-      calibrationDuration = durationSeconds * 1000UL;
-      calibrationStartTime = millis();
-      offsetX = 0;
-      offsetY = 0;
-      offsetZ = 0;
-      sampleCount = 0;
-      secondsLeftCalib = durationSeconds;
-      Serial.println("Iniciando calibração...");
+  unsigned long elapsed = millis() - calibrationStartTime;
+  secondsLeftCalib = (calibrationDuration - elapsed) / 1000;
+
+  float x, y, z;
+
+  if (adxlAvailable) {
+    sensors_event_t event;
+    accel.getEvent(&event);
+    x = event.acceleration.x;
+    y = event.acceleration.y;
+    z = event.acceleration.z;
+  } else {
+    sensors_event_t accelEvent, gyroEvent, tempEvent;
+    lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);
+    x = accelEvent.acceleration.x;
+    y = accelEvent.acceleration.y;
+    z = accelEvent.acceleration.z;
   }
-  void updateCalibration() {
-      if (!isCalibrating) return;
 
-      unsigned long elapsed = millis() - calibrationStartTime;
-      secondsLeftCalib = (calibrationDuration - elapsed) / 1000;
+  offsetX += x;
+  offsetY += y;
+  offsetZ += z;
+  sampleCount++;
 
-      float x, y, z;
+  if (elapsed >= calibrationDuration) {
+    offsetX /= sampleCount;
+    offsetY /= sampleCount;
+    offsetZ /= sampleCount;
 
-      if (adxlAvailable) {
-          sensors_event_t event;
-          accel.getEvent(&event);
-          x = event.acceleration.x;
-          y = event.acceleration.y;
-          z = event.acceleration.z;
+    isCalibrating = false;
+    vibroState = VibroState::VIBRO_SELECTMEASURE;
+
+    Serial.println("Calibração concluída!");
+    Serial.printf("Offset X: %.3f\nOffset Y: %.3f\nOffset Z: %.3f\n", offsetX, offsetY, offsetZ);
+  }
+}
+// =====================
+// Inicia medição
+// =====================
+VibroRMS rmsX, rmsY, rmsZ;
+
+void startMeasurement() {
+  isMeasuring = true;
+  sampleCount = 0;
+
+  aPeak = 0;
+  aRMS = 0;
+  stdDev = 0;
+  vRMS = 0;
+  freqDominant = 0;
+  lastSampleTime = 0;
+
+  rmsX.reset();
+  rmsY.reset();
+  rmsZ.reset();
+
+  Serial.printf("\nIniciando medição... (%d amostras @ %.1f Hz)\n", FFT_SIZE, SAMPLE_RATE);
+  Serial.printf("Duração estimada: %.3f s\n", FFT_SIZE / SAMPLE_RATE);
+  
+  startCsvLog(indexFile);
+}
+void updateMeasurement() {
+  if (!isMeasuring) return;
+
+  static float lastAcc[3] = { NAN, NAN, NAN };
+  static float lastX[3] = { NAN, NAN, NAN };
+  static float lastY[3] = { NAN, NAN, NAN };
+  static float lastZ[3] = { NAN, NAN, NAN };
+  static int repeatIndex = 0;
+
+  int samplesLeft = FFT_SIZE - sampleCount;
+  if (samplesLeft < 0) samplesLeft = 0;
+  samplesRemaining = samplesLeft;
+
+  if (micros() - lastSampleTime >= 1000000UL / SAMPLE_RATE && sampleCount < FFT_SIZE) {
+    lastSampleTime = micros();
+
+    float x = 0, y = 0, z = 0, acc = 0;
+
+    // --- Leitura do sensor e remoção do offset (gravidade) ---
+    if (adxlAvailable) {
+      sensors_event_t event;
+      accel.getEvent(&event);
+      x = event.acceleration.x - offsetX;
+      y = event.acceleration.y - offsetY;
+      z = event.acceleration.z - offsetZ;
+    } else {
+      sensors_event_t accelEvent, gyroEvent, tempEvent;
+      lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);
+      x = accelEvent.acceleration.x - offsetX;
+      y = accelEvent.acceleration.y - offsetY;
+      z = accelEvent.acceleration.z - offsetZ;
+    }
+
+    acc = sqrt(x * x + y * y + z * z);
+
+    rmsX.addSample(x);
+    rmsY.addSample(y);
+    rmsZ.addSample(z);
+
+    bool repeat = false;
+    if (!isnan(lastAcc[0]) && !isnan(lastAcc[1]) && !isnan(lastAcc[2])) {
+      if (acc == lastAcc[0] && acc == lastAcc[1] && acc == lastAcc[2] &&
+          x == lastX[0] && x == lastX[1] && x == lastX[2] &&
+          y == lastY[0] && y == lastY[1] && y == lastY[2] &&
+          z == lastZ[0] && z == lastZ[1] && z == lastZ[2]) {
+        repeat = true;
+      }
+    }
+
+    if (!repeat) {
+      accBuffer[sampleCount] = acc;
+      imagBuffer[sampleCount] = 0.0;
+      timeBuffer[sampleCount] = (float)sampleCount / SAMPLE_RATE;
+
+      float dt = 1.0 / SAMPLE_RATE;
+      if (sampleCount == 0) {
+        velocityXBuffer[0] = 0;
+        velocityYBuffer[0] = 0;
+        velocityZBuffer[0] = 0;
       } else {
-          sensors_event_t accelEvent, gyroEvent, tempEvent;
-          lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);
-          x = accelEvent.acceleration.x;
-          y = accelEvent.acceleration.y;
-          z = accelEvent.acceleration.z;
+        velocityXBuffer[sampleCount] = velocityXBuffer[sampleCount - 1] + x * dt;
+        velocityYBuffer[sampleCount] = velocityYBuffer[sampleCount - 1] + y * dt;
+        velocityZBuffer[sampleCount] = velocityZBuffer[sampleCount - 1] + z * dt;
       }
 
-      offsetX += x;
-      offsetY += y;
-      offsetZ += z;
+      if (fabs(acc) > aPeak) aPeak = fabs(acc);
+
+      // Salva no CSV em mm/s²
+      logCsvSample(SAMPLE_RATE, timeBuffer[sampleCount]*10,
+                   acc, x, y, z);
+
       sampleCount++;
+    }
 
-      if (elapsed >= calibrationDuration) {
-          offsetX /= sampleCount;
-          offsetY /= sampleCount;
-          offsetZ /= sampleCount;
+    // Atualiza histórico de repetição
+    lastAcc[repeatIndex] = acc;
+    lastX[repeatIndex] = x;
+    lastY[repeatIndex] = y;
+    lastZ[repeatIndex] = z;
+    repeatIndex = (repeatIndex + 1) % 3;
+  }
 
-          isCalibrating = false;
-          vibroState = VibroState::VIBRO_SELECTMEASURE;
+  // --- Finalização ---
+  if (sampleCount >= FFT_SIZE) {
+    isMeasuring = false;
 
-          Serial.println("Calibração concluída!");
-          Serial.printf("Offset X: %.3f\nOffset Y: %.3f\nOffset Z: %.3f\n", offsetX, offsetY, offsetZ);
+    if (endCsvLog()) {
+      indexFile++;
+      if(indexFile >= 255){
+        indexFile = 0;
       }
-  }
- // =====================
-  // Inicia medição
-  // =====================
-  VibroRMS rmsX, rmsY, rmsZ;
-
-  void startMeasurement() {
-    isMeasuring = true;
-    sampleCount = 0;
-
-    aPeak = 0;
-    aRMS = 0;
-    stdDev = 0;
-    vRMS = 0;
-    freqDominant = 0;
-    lastSampleTime = 0;
-
-    // Inicializa medidores RMS
-    rmsX.reset();
-    rmsY.reset();
-    rmsZ.reset();
-
-    Serial.printf("Iniciando medição... (%d amostras @ %.1f Hz)\n", FFT_SIZE, SAMPLE_RATE);
-    Serial.printf("Duração estimada: %.3f s\n", FFT_SIZE / SAMPLE_RATE);
-
-    // Inicializa CSV
-    if (!SPIFFS.begin(true)) {
-        Serial.println("❌ Erro ao montar SPIFFS");
-        return;
-    }
-    startCsvLog(indexFile);
-  }
-
-  void updateMeasurement() {
-    if (!isMeasuring) return;
-
-    static float lastAcc[3] = {NAN, NAN, NAN};
-    static float lastX[3] = {NAN, NAN, NAN};
-    static float lastY[3] = {NAN, NAN, NAN};
-    static float lastZ[3] = {NAN, NAN, NAN};
-    static int repeatIndex = 0;
-
-    // Calcula quantas amostras faltam
-    int samplesLeft = FFT_SIZE - sampleCount;
-    if (samplesLeft < 0) samplesLeft = 0;
-
-    // Armazena globalmente (caso queira usar em outro lugar)
-    samplesRemaining = samplesLeft;
-
-    // Captura amostra conforme taxa de amostragem
-    if (micros() - lastSampleTime >= 1000000UL / SAMPLE_RATE && sampleCount < FFT_SIZE) {
-        lastSampleTime = micros();
-
-        float x = 0, y = 0, z = 0, acc = 0;
-
-        // --- Leitura do sensor ---
-        if (adxlAvailable) {
-            sensors_event_t event;
-            accel.getEvent(&event);
-            x = event.acceleration.x - offsetX;
-            y = event.acceleration.y - offsetY;
-            z = event.acceleration.z - offsetZ;
-        } else {
-            sensors_event_t accelEvent, gyroEvent, tempEvent;
-            lsm6ds.getEvent(&accelEvent, &gyroEvent, &tempEvent);
-            x = accelEvent.acceleration.x - offsetX;
-            y = accelEvent.acceleration.y - offsetY;
-            z = accelEvent.acceleration.z - offsetZ;
-        }
-
-        acc = sqrt(x * x + y * y + z * z);
-
-        // --- RMS incremental (EmonLib) ---
-        rmsX.addSample(x);
-        rmsY.addSample(y);
-        rmsZ.addSample(z);
-
-        // --- Verifica repetição de amostras ---
-        bool repeat = false;
-        if (!isnan(lastAcc[0]) && !isnan(lastAcc[1]) && !isnan(lastAcc[2])) {
-            if (acc == lastAcc[0] && acc == lastAcc[1] && acc == lastAcc[2] &&
-                x == lastX[0] && x == lastX[1] && x == lastX[2] &&
-                y == lastY[0] && y == lastY[1] && y == lastY[2] &&
-                z == lastZ[0] && z == lastZ[1] && z == lastZ[2]) {
-                repeat = true;
-            }
-        }
-
-        if (!repeat) {
-            accBuffer[sampleCount] = acc;
-            imagBuffer[sampleCount] = 0.0;
-            timeBuffer[sampleCount] = (float)sampleCount / SAMPLE_RATE;
-
-            float dt = 1.0 / SAMPLE_RATE;
-            if (sampleCount == 0) {
-                velocityXBuffer[0] = 0;
-                velocityYBuffer[0] = 0;
-                velocityZBuffer[0] = 0;
-            } else {
-                velocityXBuffer[sampleCount] = velocityXBuffer[sampleCount - 1] + x * dt;
-                velocityYBuffer[sampleCount] = velocityYBuffer[sampleCount - 1] + y * dt;
-                velocityZBuffer[sampleCount] = velocityZBuffer[sampleCount - 1] + z * dt;
-            }
-
-            if (fabs(acc) > aPeak) aPeak = fabs(acc);
-
-            // Salva no CSV
-            //logCsvSample(SAMPLE_RATE,timeBuffer[sampleCount], acc, x, y, z);
-            logCsvSample(SAMPLE_RATE, timeBuffer[sampleCount], acc * 1000, x * 1000, y * 1000, z * 1000);
-
-            sampleCount++;
-        }
-
-        // Atualiza buffers de repetição
-        lastAcc[repeatIndex] = acc;
-        lastX[repeatIndex] = x;
-        lastY[repeatIndex] = y;
-        lastZ[repeatIndex] = z;
-        repeatIndex = (repeatIndex + 1) % 3;
+      setValor(dadosConfig, "INDEXFILE", String(indexFile));
+      updateValuesRec();
     }
 
-    // Finaliza medição quando atingido FFT_SIZE
-    if (sampleCount >= FFT_SIZE) {
-        isMeasuring = false;
-        csvFile.flush();
+    // Remove offset DC
+    float mean = 0;
+    for (int i = 0; i < sampleCount; i++) mean += accBuffer[i];
+    mean /= sampleCount;
+    for (int i = 0; i < sampleCount; i++) accBuffer[i] -= mean;
 
-        if (endCsvLog()) {
-            indexFile++;
-            setValor(dadosConfig, "INDEXFILE", String(indexFile));
-            updateValuesRec();
-        }
+    // RMS por eixo
+    float rmsXval = rmsX.getRMS();
+    float rmsYval = rmsY.getRMS();
+    float rmsZval = rmsZ.getRMS();
+    aRMS = sqrt(rmsXval * rmsXval + rmsYval * rmsYval + rmsZval * rmsZval);
 
-        // --- Remove DC antes da FFT ---
-        float mean = 0;
-        for (int i = 0; i < sampleCount; i++) mean += accBuffer[i];
-        mean /= sampleCount;
-        for (int i = 0; i < sampleCount; i++) accBuffer[i] -= mean;
+    rmsX.reset(); rmsY.reset(); rmsZ.reset();
 
-        // --- RMS usando EmonLib ---
-        float rmsXval = rmsX.getRMS();
-        float rmsYval = rmsY.getRMS();
-        float rmsZval = rmsZ.getRMS();
-        aRMS = sqrt(rmsXval * rmsXval + rmsYval * rmsYval + rmsZval * rmsZval);
+    // Desvio padrão
+    float variance = 0;
+    for (int i = 0; i < sampleCount; i++)
+      variance += accBuffer[i] * accBuffer[i];
+    stdDev = sqrt(variance / sampleCount);
 
-        rmsX.reset();
-        rmsY.reset();
-        rmsZ.reset();
-
-        // --- Desvio padrão ---
-        float variance = 0;
-        for (int i = 0; i < sampleCount; i++)
-            variance += accBuffer[i] * accBuffer[i];
-        stdDev = sqrt(variance / sampleCount);
-
-        // --- Velocidade RMS ---
-        float sumVelSq = 0;
-        for (int i = 0; i < sampleCount; i++) {
-            float vMag = sqrt(
-                velocityXBuffer[i] * velocityXBuffer[i] +
-                velocityYBuffer[i] * velocityYBuffer[i] +
-                velocityZBuffer[i] * velocityZBuffer[i]
-            );
-            sumVelSq += vMag * vMag;
-        }
-        vRMS = sqrt(sumVelSq / sampleCount);
-
-        // --- FFT ---
-        if (FFTUH) {
-          FFT.windowing(accBuffer, sampleCount, FFT_WIN_TYP_HANN, FFT_FORWARD);
-        } else {
-          FFT.windowing(accBuffer, sampleCount, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
-        }
-        
-        FFT.compute(accBuffer, imagBuffer, sampleCount, FFT_FORWARD);
-        FFT.complexToMagnitude(accBuffer, imagBuffer, sampleCount);
-
-        // --- Freq. dominante ---
-        float maxMag = 0;
-        int index = 0;
-        for (int i = 1; i < sampleCount / 2; i++) {
-            if (accBuffer[i] > maxMag) {
-                maxMag = accBuffer[i];
-                index = i;
-            }
-        }
-        freqDominant = (index * SAMPLE_RATE) / (float)sampleCount;
-
-        vibroState = VibroState::VIBRO_MEASURERESULT;
-
-        // --- Resultado ---
-        Serial.println("\n--- RESULTADO ---");
-        Serial.printf("Amostras coletadas: %d\n", sampleCount);
-        Serial.printf("Pico Acel: %.3f mm/s²\n", aPeak * 1000);
-        Serial.printf("RMS Acel: %.3f mm/s²\n", aRMS * 1000);
-        Serial.printf("Desvio padrão: %.3f mm/s²\n", stdDev * 1000);
-        Serial.printf("Velocidade RMS: %.3f mm/s\n", vRMS * 1000);
-        Serial.printf("Freq. dominante: %.2f Hz\n", freqDominant);
-        Serial.println("-----------------");
+    // Velocidade RMS
+    float sumVelSq = 0;
+    for (int i = 0; i < sampleCount; i++) {
+      float vMag = sqrt(
+        velocityXBuffer[i]*velocityXBuffer[i] +
+        velocityYBuffer[i]*velocityYBuffer[i] +
+        velocityZBuffer[i]*velocityZBuffer[i]);
+      sumVelSq += vMag * vMag;
     }
-  }
+    vRMS = sqrt(sumVelSq / sampleCount);
 
+    // FFT
+    if (FFTUH)
+      FFT.windowing(accBuffer, sampleCount, FFT_WIN_TYP_HANN, FFT_FORWARD);
+    else
+      FFT.windowing(accBuffer, sampleCount, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+
+    FFT.compute(accBuffer, imagBuffer, sampleCount, FFT_FORWARD);
+    FFT.complexToMagnitude(accBuffer, imagBuffer, sampleCount);
+
+    // Freq. dominante
+    float maxMag = 0; int index = 0;
+    for (int i = 1; i < sampleCount / 2; i++) {
+      if (accBuffer[i] > maxMag) { maxMag = accBuffer[i]; index = i; }
+    }
+    freqDominant = (index * SAMPLE_RATE) / (float)sampleCount;
+
+    vibroState = VibroState::VIBRO_MEASURERESULT;
+
+    // --- Resultado ---
+    Serial.println("\n--- RESULTADO ---");
+    Serial.printf("Amostras coletadas: %d\n", sampleCount);
+    Serial.printf("Pico Acel: %.3f mm/s²\n", aPeak);
+    Serial.printf("RMS Acel: %.3f mm/s²\n", aRMS);
+    Serial.printf("Desvio padrão: %.3f mm/s²\n", stdDev);
+    Serial.printf("Velocidade RMS: %.3f mm/s\n", vRMS);
+    Serial.printf("Freq. dominante: %.2f Hz\n", freqDominant);
+    Serial.println("-----------------\n");
+  }
+}
 // ==== FIM Funçoes do Vibrometro calibrar e medir ====
 
 void exibirImagemDaFlash(uint32_t enderecoInicial, int largura, int altura, int offsetX, int offsetY) {
@@ -627,376 +618,158 @@ void setupButtons() {
   pinMode(BUTTON_ENC, INPUT_PULLUP);
 }
 //OTA
-  const char* ssidOTA = "StroboTech";
-  const char* senhaOTA = "12345678";
+const char *ssidOTA = "StroboTech";
+const char *senhaOTA = "12345678";
+const byte DNS_PORT = 53;
 
-  #ifdef GERAHTML
-    const char* htmlContent = R"rawliteral(
-      <!DOCTYPE html>
-      <html lang="pt">
-      <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Gerenciamento Strobotech</title>
-      <style>
-      body {
-        font-family: Arial, sans-serif;
-        background-color: #f0f0f0;
-        text-align: center;
-        margin: 0;
-        padding: 0;
-      }
-      .container {
-        max-width: 500px;
-        background: #fff;
-        padding: 20px;
-        margin: 30px auto;
-        border-radius: 10px;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
-      }
-      h2 {
-        color: #333;
-      }
-      input[type='file'] {
-        margin: 15px 0;
-        width: 100%;
-      }
-      input[type='submit'], button {
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        font-size: 16px;
-        border-radius: 5px;
-        cursor: pointer;
-        margin-top: 10px;
-      }
-      input[type='submit']:hover, button:hover {
-        background-color: #45a049;
-      }
-      .progress {
-        width: 100%;
-        background-color: #ddd;
-        border-radius: 5px;
-        margin-top: 10px;
-      }
-      .progress-bar {
-        width: 0%;
-        height: 20px;
-        background-color: #4CAF50;
-        border-radius: 5px;
-        text-align: center;
-        color: white;
-        transition: width 0.3s;
-      }
-      #fileList {
-        margin-top: 20px;
-      }
-      .file-item {
-        background: #fafafa;
-        margin: 5px 0;
-        padding: 10px;
-        border-radius: 5px;
-        box-shadow: 0px 1px 3px rgba(0,0,0,0.1);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .file-item button {
-        background-color: #2196F3;
-        font-size: 14px;
-        padding: 5px 10px;
-      }
-      .file-item button.delete {
-        background-color: #f44336;
-      }
-      .file-item button:hover {
-        opacity: 0.9;
-      }
-      p {
-        color: #555;
-        font-size: 14px;
-        margin: 10px 0;
-      }
+DNSServer dnsServer;
+WebServer server(80);
 
-      /* ===== Estilo das Abas ===== */
-      .tab {
-        overflow: hidden;
-        background-color: #333;
-        display: flex;
-        justify-content: center;
-      }
-      .tab button {
-        background-color: inherit;
-        border: none;
-        outline: none;
-        cursor: pointer;
-        padding: 14px 20px;
-        color: white;
-        transition: background-color 0.3s;
-        font-size: 16px;
-      }
-      .tab button:hover {
-        background-color: #575757;
-      }
-      .tab button.active {
-        background-color: #4CAF50;
-      }
-      .tabcontent {
-        display: none;
-      }
-      </style>
-      </head>
-      <body>
+int filtraIndex(String nome) {
+  if (nome.startsWith("/")) nome.remove(0, 1);
 
-      <!-- Menu de Abas -->
-      <div class="tab">
-        <button class="tablinks active" onclick="openTab(event, 'arquivos')">Arquivos</button>
-        <button class="tablinks" onclick="openTab(event, 'update')">Atualização OTA</button>
-      </div>
+  if (nome.startsWith("medicao_") && nome.endsWith(".csv")) {
+    int start = String("medicao_").length();
+    int end = nome.indexOf('.', start);
+    if (end > start) {
+      int num = nome.substring(start, end).toInt();
+      return num;  // retorna o índice
+    }
+  }
+  return -1;  // retorna -1 se não for um arquivo válido
+}
+void configurarRoutesBasicas() {
+  server.serveStatic("/", SPIFFS, "/index.html");
 
-      <!-- ABA 1 - LISTAR ARQUIVOS -->
-      <div id="arquivos" class="tabcontent" style="display:block;">
-        <div class="container">
-          <h2>Arquivos CSV do Vibrometro</h2>
-          <div id="fileList">Carregando...</div>
-        </div>
-      </div>
-
-      <!-- ABA 2 - ATUALIZAÇÃO OTA -->
-      <div id="update" class="tabcontent">
-        <div class="container">
-          <h2>Atualização OTA do Firmware</h2>
-          <p>Escolha o arquivo .bin do firmware para atualizar seu dispositivo</p>
-          <form id="uploadForm">
-            <input type="file" name="update" id="updateFile" accept=".bin" required><br>
-            <input type="submit" value="Atualizar Firmware">
-            <div class="progress"><div class="progress-bar" id="progressBar">0%</div></div>
-          </form>
-          <p>Atenção: Não desligue o dispositivo durante a atualização!</p>
-        </div>
-      </div>
-
-      <script>
-      const form = document.getElementById('uploadForm');
-      const progressBar = document.getElementById('progressBar');
-      const fileList = document.getElementById('fileList');
-
-      // ---- Controle das Abas ----
-      function openTab(evt, tabName) {
-        const tabcontent = document.getElementsByClassName('tabcontent');
-        const tablinks = document.getElementsByClassName('tablinks');
-
-        for (let i = 0; i < tabcontent.length; i++) {
-          tabcontent[i].style.display = 'none';
+  server.on(
+    "/update", HTTP_POST,
+    []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/plain", Update.hasError() ? "Falha!" : "Sucesso!");
+      delay(1000);
+      ESP.restart();
+    },
+    []() {
+      HTTPUpload &upload = server.upload();
+      if (upload.status == UPLOAD_FILE_START) {
+        Serial.printf("Atualizando: %s\n", upload.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+          Update.printError(Serial);
         }
-        for (let i = 0; i < tablinks.length; i++) {
-          tablinks[i].classList.remove('active');
-        }
-        document.getElementById(tabName).style.display = 'block';
-        evt.currentTarget.classList.add('active');
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
+          Update.printError(Serial);
+      } else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true))
+          Serial.printf("Atualização concluída (%u bytes)\n", upload.totalSize);
+      }
+    });
+      // --- ROTA: Listar arquivos CSV ---
+    server.on("/list", HTTP_GET, []() {
+      String json = listarCsvFiles();
+      server.send(200, "application/json", json);
+      Serial.println("✅ Lista enviada: " + json);
+    });
+    // --- ROTA: Download de arquivo CSV ---
+    server.on("/download", HTTP_GET, []() {
+      int index = -1;
 
-        // Recarregar lista quando abrir aba de arquivos
-        if (tabName === 'arquivos') loadFiles();
+      // Pega o índice do arquivo a partir do parâmetro "file"
+      if (server.hasArg("file")) {
+          String nome = server.arg("file");  // ex: "medicao_1.csv"
+          index = filtraIndex(nome);    // função que retorna o número do arquivo
       }
 
-      // ---- Upload OTA ----
-      form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        const file = document.getElementById('updateFile').files[0];
-        if (!file) return alert('Selecione um arquivo .bin');
-        const xhr = new XMLHttpRequest();
-        const formData = new FormData();
-        formData.append('update', file);
-        xhr.open('POST', '/update', true);
-        xhr.upload.onprogress = function(event) {
-          if (event.lengthComputable) {
-            const percent = Math.round((event.loaded / event.total) * 100);
-            progressBar.style.width = percent + '%';
-            progressBar.textContent = percent + '%';
-          }
-        };
-        xhr.onload = function() {
-          if (xhr.status === 200) {
-            progressBar.style.width = '100%';
-            progressBar.textContent = 'Upload concluído!';
-            alert('Atualização enviada! O dispositivo reiniciará se a OTA for bem-sucedida.');
-          } else {
-            alert('Erro na atualização!');
-          }
-        };
-        xhr.send(formData);
-      });
-
-      // ---- Listar arquivos CSV ----
-      function loadFiles() {
-        fetch('/list')
-          .then(response => response.json())
-          .then(files => {
-            if (files.length === 0) {
-              fileList.innerHTML = "<p>Nenhum arquivo CSV encontrado.</p>";
-              return;
-            }
-            fileList.innerHTML = "";
-            files.forEach(file => {
-              const div = document.createElement('div');
-              div.classList.add('file-item');
-              div.innerHTML = `
-                <span>${file.name} (${file.size} bytes)</span>
-                <div>
-                  <button onclick="downloadFile('${file.name}')">Baixar</button>
-                  <button class="delete" onclick="deleteFile('${file.name}')">Excluir</button>
-                </div>
-              `;
-              fileList.appendChild(div);
-            });
-          })
-          .catch(() => {
-            fileList.innerHTML = "<p>Erro ao carregar lista de arquivos.</p>";
-          });
-      }
-
-      // ---- Download de arquivo ----
-      function downloadFile(filename) {
-        window.location.href = '/download?file=' + encodeURIComponent(filename);
-      }
-
-      // ---- Excluir arquivo ----
-      function deleteFile(filename) {
-        if (!confirm('Deseja realmente excluir ' + filename + '?')) return;
-        fetch('/delete?file=' + encodeURIComponent(filename))
-          .then(response => response.text())
-          .then(msg => {
-            alert(msg);
-            loadFiles();
-          })
-          .catch(() => alert('Erro ao excluir arquivo.'));
-      }
-
-      // ---- Carrega lista ao abrir ----
-      window.onload = loadFiles;
-      </script>
-
-      </body>
-      </html>
-      )rawliteral";
-
-
-  #endif
-
-  void iniciarOTA_AP() {
-    if (otaAtivo) return;  // já ativo
-    otaAtivo = true;
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(ssidOTA, senhaOTA);
-    IPAddress ip = WiFi.softAPIP();
-    Serial.print("OTA ativo em ");
-    Serial.println(ip);
-
-    server.serveStatic("/", SPIFFS, "/index.html");
-
-    server.on(
-      "/update", HTTP_POST,
-      []() {
-        server.sendHeader("Connection", "close");
-        server.send(200, "text/plain", Update.hasError() ? "Falha!" : "Sucesso!");
-        delay(1000);
-        ESP.restart();
-      },
-      []() {
-        HTTPUpload& upload = server.upload();
-        if (upload.status == UPLOAD_FILE_START) {
-          Serial.printf("Atualizando: %s\n", upload.filename.c_str());
-          if (!Update.begin()) Update.printError(Serial);
-        } else if (upload.status == UPLOAD_FILE_WRITE) {
-          if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-            Update.printError(Serial);
-        } else if (upload.status == UPLOAD_FILE_END) {
-          if (Update.end(true))
-            Serial.printf("Atualização concluída (%u bytes)\n", upload.totalSize);
-        }
-      });
-
-      // --- LISTAR ARQUIVOS CSV ---
-      server.on("/list", HTTP_GET, []() {
-        Serial.println("Listando arquivos...");
-        String json = "[";
-        File root = SPIFFS.open("/");
-        File file = root.openNextFile();
-        bool first = true;
-
-        while (file) {
-          String name = file.name();
-          if (name.endsWith(".csv")) {
-            if (!first) json += ",";
-            json += "{\"name\":\"" + name + "\",\"size\":" + String(file.size()) + "}";
-            first = false;
-          }
-          file = root.openNextFile();
-        }
-        json += "]";
-        server.send(200, "application/json", json);
-      });
-
-      // --- ROTA: Download de arquivo ---
-      server.on("/download", HTTP_GET, []() {
-        if (!server.hasArg("file")) {
-          server.send(400, "text/plain", "Faltando parâmetro 'file'");
+      if (index < 0) {
+          server.send(400, "text/plain", "Nome de arquivo inválido");
           return;
-        }
-        String path = server.arg("file");
-        if (!path.startsWith("/")) path = "/" + path;
+      }
 
-        if (!fileExists(SPIFFS, path.c_str())) {
+      if (!arquivoExiste(index)) {
           server.send(404, "text/plain", "Arquivo não encontrado");
           return;
-        }
-        File file = SPIFFS.open(path, FILE_READ);
-        server.streamFile(file, "text/csv");
-        file.close();
-      });
+      }
 
-      // --- ROTA: Excluir arquivo ---
-      server.on("/delete", HTTP_GET, []() {
-        if (!server.hasArg("file")) {
-          server.send(400, "text/plain", "Faltando parâmetro 'file'");
-          return;
-        }
-        String path = server.arg("file");
-        if (!path.startsWith("/")) path = "/" + path;
-        
-        if (deleteFile(SPIFFS, path.c_str())) {
-          server.send(200, "text/plain", "Arquivo deletado");
-        } else {
-          server.send(500, "text/plain", "Falha ao deletar arquivo");
-        }
-      });
+      // Define headers para download
+      String nomeArquivo = "medicao_" + String(index) + ".csv";
+      // Configura cabeçalhos HTTP para download
+      server.sendHeader("Content-Type", "application/octet-stream");
+      server.sendHeader("Content-Disposition", "attachment; filename=" + nomeArquivo + "\"");
+      server.sendHeader("Connection", "close");
 
-      // --- ROTA: Teste de SPIFFS ---
-      server.on("/spiffs/test", HTTP_GET, []() {
-        if (testFileIO(SPIFFS, "/test.txt"))
-          server.send(200, "text/plain", "Teste SPIFFS OK");
-        else
-          server.send(500, "text/plain", "Falha no teste SPIFFS");
-      });
+      // Envia os dados do CSV para o cliente
+      WiFiClient client = server.client();
+      downloadCsvFile(index, &client);  // adaptar downloadCsvFile para enviar via client
+    });
+    // --- ROTA: Excluir arquivo CSV ---
+    server.on("/delete", HTTP_GET, []() {
+      int index = -1;
 
+      // Pega o índice do arquivo a partir do parâmetro "file"
+      if (server.hasArg("file")) {
+        String nome = server.arg("file");  // ex: "medicao_1.csv"
+        index = filtraIndex(nome);    // função que retorna o número do arquivo
+      }
 
-    server.begin();
+      if (index < 0) {
+        server.send(400, "text/plain", "Nome de arquivo inválido");
+        return;
+      }
+
+      if (apagarCsvFile(index)) {
+        server.send(200, "text/plain", "Arquivo deletado");
+      } else {
+        server.send(500, "text/plain", "Falha ao deletar arquivo");
+      }
+    });
+    // NotFound -> redireciona para página principal (ajuda captive portal)
+    server.onNotFound([]() {
+      server.sendHeader("Location", "http://192.168.4.1", true);
+      server.send(302, "text/plain", "");
+    });
+    server.on("/version", HTTP_GET, []() {
+      server.send(200, "text/plain", VERSION_SHOW.c_str());
+    });
   }
+void iniciarOTA_AP() {
+  if (otaAtivo) return;
+  otaAtivo = true;
 
-  void pararOTA_AP() {
-    if (!otaAtivo) return;
-    otaAtivo = false;
+  Serial.println("\n=== Iniciando OTA Access Point ===");
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(ssidOTA, senhaOTA);
+  IPAddress ip = WiFi.softAPIP();
+  Serial.print("AP ativo em: ");
+  Serial.println(ip);
 
-    server.stop();
-    WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_OFF);
-    Serial.println("OTA desativado");
-  }
+  // Captive portal: responde DNS para qualquer domínio apontando para o AP
+  dnsServer.start(DNS_PORT, "*", ip);
 
+  // Configura rotas (servir index, OTA, /writeflash, etc.)
+  configurarRoutesBasicas();
+
+  // Inicia servidor
+  server.begin();
+  Serial.println("Servidor OTA iniciado!");
+}
+void processarOTA() {
+  if (!otaAtivo) return;
+  dnsServer.processNextRequest();
+  server.handleClient();
+}
+void pararOTA_AP() {
+  if (!otaAtivo) return;
+  otaAtivo = false;
+  dnsServer.stop();
+  server.stop();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+  Serial.println("OTA desativado");
+}
 //FIm OTA
 void setup() {
+  Serial.begin(115200);
+  while (!Serial);
   // Inicializa o pino de ligar o aparelho
   pinMode(ONOFF, OUTPUT);
   digitalWrite(ONOFF, HIGH);
@@ -1026,39 +799,27 @@ void setup() {
     while (true);
   }
   display.clearDisplay();
-  // Inicializa o timer com resolução de 1us (1MHz)
-  Serial.begin(115200);
-  while (!Serial);
 
   iniciarSpiffs();
-  
-  #ifdef GERAHTML
-    deleteFile(SPIFFS, "/index.html");
-    if(!fileExists(SPIFFS, "/index.html")){
-      if (writeFile(SPIFFS, "/index.html", htmlContent)) {
-        Serial.println("✅ Arquivo index.html salvo com sucesso!");
-      } else {
-        Serial.println("❌ Erro ao salvar o arquivo!");
-      }
-    }
-  #endif
+
   iniciarSPIFlash();
   identificarJEDEC();
+  initCsvSlots();
   exibirImagemDaFlash(0x00000, 128, 64, 0, 0);
   delay(2000);
   //Inicializa acelerometro após delay para reconhecer com certeza
-    adxlAvailable = accel.begin();
-    if (adxlAvailable) {
-      accel.setRange(ADXL345_RANGE_4_G);
-      AcelAvailable = true;
-    }
-    lsmAvailable = lsm6ds.begin_I2C();  // inicializa via I2C
-    if (lsmAvailable) {
-      lsm6ds.setAccelRange(LSM6DS_ACCEL_RANGE_4_G);  // igual ao ADXL345
-      AcelAvailable = true;
-    }
+  adxlAvailable = accel.begin();
+  if (adxlAvailable) {
+    accel.setRange(ADXL345_RANGE_4_G);
+    AcelAvailable = true;
+  }
+  lsmAvailable = lsm6ds.begin_I2C();  // inicializa via I2C
+  if (lsmAvailable) {
+    lsm6ds.setAccelRange(LSM6DS_ACCEL_RANGE_4_G);  // igual ao ADXL345
+    AcelAvailable = true;
+  }
   display.clearDisplay();
-  exibirImagemDaFlash(0x0041F, 128, 32, 0, 20);
+  exibirImagemDaFlash(0x02000, 128, 32, 0, 20);
   if (EEPROM.read(0) == 0xFF) {
     Serial.println("EEPROM vazia. Gravando valores padrao...");
     // Defina seus valores padrão aqui
@@ -1090,7 +851,8 @@ void setup() {
   FFTUH = getValor(dadosConfig, "FFTHA").toInt();
 
   delay(1000);
-  carregarArquivoParcial(displayConfig, 0x006DD, 0x001FFF, idioma);
+  //carregarArquivoParcial(displayConfig, 0x006DD, 0x001FFF, idioma);
+  carregarArquivoParcial(displayConfig, 0x005000, 0x006FFF, idioma);
   delay(1000);
   display.clearDisplay();
 
@@ -1117,7 +879,7 @@ void loop() {
     vibroState = VibroState::VIBRO_HOME;
     valInEncoder = 0;
     modeConfig = 0;
-    modeCalibFatRpm=0;
+    modeCalibFatRpm = 0;
     if (otaAtivo) pararOTA_AP();
     //==== STROBOSCOPIO ====
     if (lanterna) {
@@ -1222,37 +984,37 @@ void loop() {
         break;
       case Mode::TEST:
         {
-            static unsigned long ultimoTempo = 0;
-            static float fpmAtual = 30.0;
-            static const float passo = 30.0;
-            static const unsigned long intervaloTeste = 500;
+          static unsigned long ultimoTempo = 0;
+          static float fpmAtual = 30.0;
+          static const float passo = 30.0;
+          static const unsigned long intervaloTeste = 500;
 
-            unsigned long agora = millis();
+          unsigned long agora = millis();
 
-            if (fpmTest.isRunning()) {
-                if (agora - ultimoTempo >= intervaloTeste) {
-                    TESTE_fpm = fpmAtual;
-                    TESTE_calc = true;
-                    updateValues();
+          if (fpmTest.isRunning()) {
+            if (agora - ultimoTempo >= intervaloTeste) {
+              TESTE_fpm = fpmAtual;
+              TESTE_calc = true;
+              updateValues();
 
-                    fpmAtual += passo;
-                    FreqDeTest = fpmAtual / 60.0;
+              fpmAtual += passo;
+              FreqDeTest = fpmAtual / 60.0;
 
-                    if (fpmAtual >= maxFPM) {
-                        fpmAtual = 30.0;  // reinicia ciclo
-                    }
-                    ultimoTempo = agora;
-                }
-                STB_outputEnabled = true;
-            } else {
-                // 🔹 Reset de variáveis ao encerrar TESTE
-                fpmAtual = 30.0;
-                FreqDeTest = 0.0;     // <<< Zera valor antigo
-                STB_outputEnabled = false;
-                TESTE_calc = false;
-                ultimoTempo = 0;      // <<< Garante recomeço limpo
+              if (fpmAtual >= maxFPM) {
+                fpmAtual = 30.0;  // reinicia ciclo
+              }
+              ultimoTempo = agora;
             }
-            break;
+            STB_outputEnabled = true;
+          } else {
+            // 🔹 Reset de variáveis ao encerrar TESTE
+            fpmAtual = 30.0;
+            FreqDeTest = 0.0;  // <<< Zera valor antigo
+            STB_outputEnabled = false;
+            TESTE_calc = false;
+            ultimoTempo = 0;  // <<< Garante recomeço limpo
+          }
+          break;
         }
       case Mode::HOME:
         {
@@ -1281,19 +1043,19 @@ void loop() {
               timeCalib = constrain(timeCalib + (delta * 5), 5, 30);
               saveData = setValor(dadosConfig, "TIMECALIB", String(timeCalib));
             } else if (vibroState == VibroState::VIBRO_SELECTMEASURE) {
-              if (modeMeasure == 1){
-                if(SAMPLE_RATE >= 200 && SAMPLE_RATE <= 500)
+              if (modeMeasure == 1) {
+                if (SAMPLE_RATE >= 200 && SAMPLE_RATE <= 500)
                   FFT_SIZE = 512;
-                else if(SAMPLE_RATE > 500 && SAMPLE_RATE < 2000)
+                else if (SAMPLE_RATE > 500 && SAMPLE_RATE < 2000)
                   FFT_SIZE = 1024;
-                else if(SAMPLE_RATE >= 2000 && SAMPLE_RATE < 4000)
+                else if (SAMPLE_RATE >= 2000 && SAMPLE_RATE < 4000)
                   FFT_SIZE = constrain(FFT_SIZE + (delta * 512), 512, 1024);
-                else if(SAMPLE_RATE >= 4000 && SAMPLE_RATE < 5000)
+                else if (SAMPLE_RATE >= 4000 && SAMPLE_RATE < 5000)
                   FFT_SIZE = 1024;
-                else if(SAMPLE_RATE >= 5000 && SAMPLE_RATE <= 10000)
+                else if (SAMPLE_RATE >= 5000 && SAMPLE_RATE <= 10000)
                   FFT_SIZE = constrain(FFT_SIZE + (delta * 512), 1024, 2048);
                 saveData = setValor(dadosConfig, "FFT", String(FFT_SIZE));
-              }else if (modeMeasure == 0){
+              } else if (modeMeasure == 0) {
                 SAMPLE_RATE = constrain(SAMPLE_RATE + (delta * 100), 100, 10000);
                 saveData = setValor(dadosConfig, "SAMPLERATE", String(SAMPLE_RATE));
               }
@@ -1306,15 +1068,15 @@ void loop() {
         {
           if (!otaAtivo) iniciarOTA_AP();
           server.handleClient();
-          
+
           long newPos = encoder.read() / Sensib_Encoder;
           int delta = newPos - lastEncoderPos;
           if (delta != 0) {
             if (modeConfig == 1) {
-              if(modeCalibFatRpm == 1) step = 0.010;
+              if (modeCalibFatRpm == 1) step = 0.010;
               else if (modeCalibFatRpm == 2) step = 0.100;
               else step = 0.001;
-              step = delta*step;
+              step = delta * step;
               CalibFat = constrain(CalibFat + step, minVal, maxVal);
               setValor(dadosConfig, "CALIBFATRPM", String(CalibFat));
             }
@@ -1324,6 +1086,7 @@ void loop() {
         }
     }
   }
+  processarOTA();
 }
 void handleInput() {
   static bool lastMenuState = HIGH;
@@ -1386,7 +1149,7 @@ void handleInput() {
             break;
         }
       } else if (selectedMode == Mode::FREQUENCY) {
-        if(modeFreq == 0){
+        if (modeFreq == 0) {
           valInEncoder++;
           if (valInEncoder >= 3) {
             valInEncoder = 0;
@@ -1404,25 +1167,26 @@ void handleInput() {
         fpmTest.startTimer(25);
       } else if (selectedMode == Mode::LANTERN || currentMode == Mode::ABOUT) {
         inSubmenu = false;
+        listarCsvFiles();
       } else if (selectedMode == Mode::CONFIG) {
-        if (modeConfig == 1){
-            modeCalibFatRpm++;
-            if (modeCalibFatRpm >= 3) {
-              modeCalibFatRpm = 0;
-            }
-        } else if (modeConfig == 2) { //reset de fabrica
-            Serial.println("EEPROM vazia. Gravando valores padrao...");
-            // Defina seus valores padrão aqui
-            setValor(dadosConfig, "IDIOMA", "1");
-            setValor(dadosConfig, "TIMECALIB", "10");
-            setValor(dadosConfig, "FPM", "1200");
-            setValor(dadosConfig, "DUTY", "4");
-            setValor(dadosConfig, "CALIBFATRPM", "1.000");
-            setValor(dadosConfig, "INDEXFILE", "1");
-            setValor(dadosConfig, "SAMPLERATE", "200");
-            setValor(dadosConfig, "FFT", "512");
-            // Salva os valores padrão na EEPROM
-            salvarDadosEEPROM(dadosConfig);
+        if (modeConfig == 1) {
+          modeCalibFatRpm++;
+          if (modeCalibFatRpm >= 3) {
+            modeCalibFatRpm = 0;
+          }
+        } else if (modeConfig == 2) {  //reset de fabrica
+          Serial.println("EEPROM vazia. Gravando valores padrao...");
+          // Defina seus valores padrão aqui
+          setValor(dadosConfig, "IDIOMA", "1");
+          setValor(dadosConfig, "TIMECALIB", "10");
+          setValor(dadosConfig, "FPM", "1200");
+          setValor(dadosConfig, "DUTY", "4");
+          setValor(dadosConfig, "CALIBFATRPM", "1.000");
+          setValor(dadosConfig, "INDEXFILE", "1");
+          setValor(dadosConfig, "SAMPLERATE", "200");
+          setValor(dadosConfig, "FFT", "512");
+          // Salva os valores padrão na EEPROM
+          salvarDadosEEPROM(dadosConfig);
         }
       } else {
         inSubmenu = !inSubmenu;
@@ -1442,11 +1206,11 @@ void handleInput() {
       FFTUH = !FFTUH;
       setValor(dadosConfig, "FFTHA", String(FFTUH));
     } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_SELECTMEASURE) {
-      if (modeMeasure == 1){
+      if (modeMeasure == 1) {
         FFT_SIZE = constrain(FFT_SIZE + 512, 512, 2048);
         saveData = setValor(dadosConfig, "FFT", String(FFT_SIZE));
-      } else if (modeMeasure == 0){
-        SAMPLE_RATE-= 100;
+      } else if (modeMeasure == 0) {
+        SAMPLE_RATE -= 100;
         if (SAMPLE_RATE < 100) {
           SAMPLE_RATE = 10000;
         }
@@ -1457,7 +1221,7 @@ void handleInput() {
         numIdioma = (numIdioma - 1 + 1) % 4 + 1;
         setValor(dadosConfig, "IDIOMA", String(numIdioma));
       } else if (modeConfig == 1) {
-        if(modeCalibFatRpm == 1) step = 0.010;
+        if (modeCalibFatRpm == 1) step = 0.010;
         else if (modeCalibFatRpm == 2) step = 0.100;
         else step = 0.001;
         CalibFat -= step;
@@ -1482,11 +1246,11 @@ void handleInput() {
     } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_SELECTCALIB) {
       timeCalib = constrain(timeCalib + 5, 5, 30);
     } else if (currentMode == Mode::VIBROMETER && vibroState == VibroState::VIBRO_SELECTMEASURE) {
-      if (modeMeasure == 1){
+      if (modeMeasure == 1) {
         FFT_SIZE = constrain(FFT_SIZE + 512, 512, 2048);
         saveData = setValor(dadosConfig, "FFT", String(FFT_SIZE));
-      } else if (modeMeasure == 0){
-        SAMPLE_RATE+= 100;
+      } else if (modeMeasure == 0) {
+        SAMPLE_RATE += 100;
         if (SAMPLE_RATE > 10000) {
           SAMPLE_RATE = 100;
         }
@@ -1500,7 +1264,7 @@ void handleInput() {
         numIdioma = (numIdioma - 1 - 1 + 4) % 4 + 1;
         setValor(dadosConfig, "IDIOMA", String(numIdioma));
       } else if (modeConfig == 1) {
-        if(modeCalibFatRpm == 1) step = 0.010;
+        if (modeCalibFatRpm == 1) step = 0.010;
         else if (modeCalibFatRpm == 2) step = 0.100;
         else step = 0.001;
         CalibFat += step;
@@ -1521,12 +1285,12 @@ void handleInput() {
       if (modeFreq >= 3) {
         modeFreq = 0;
       }
-    } else if (selectedMode == Mode::CONFIG){
+    } else if (selectedMode == Mode::CONFIG) {
       modeConfig++;
       if (modeConfig >= 3) {
         modeConfig = 0;
       }
-    } else if(vibroState == VibroState::VIBRO_SELECTMEASURE){
+    } else if (vibroState == VibroState::VIBRO_SELECTMEASURE) {
       modeMeasure++;
       if (modeMeasure >= 2) {
         modeMeasure = 0;
@@ -1545,6 +1309,8 @@ void drawMenu() {
   display.setCursor(0, 20);
   display.println(getModeName(currentMode));
   display.setTextSize(1);
+  display.setCursor(85, 36);
+  if(currentMode == Mode::HOME) display.println(VERSION_NUM);
   display.setCursor(0, 56);
   display.println(getValor(displayConfig, "MENUPROX", idioma));
   display.display();
@@ -1585,7 +1351,7 @@ void drawScreen(Mode mode) {
     display.println(getValor(displayConfig, "ABOUTP3", idioma));
     display.println(getValor(displayConfig, "ABOUTP4", idioma));
     display.println(getValor(displayConfig, "ABOUTSITE", idioma));
-    exibirImagemDaFlash(0x0063E, 32, 32, 90, 15);
+    exibirImagemDaFlash(0x03000, 32, 32, 90, 15);
   } else if (currentMode == Mode::TEST) {
     display.print(fpmTest.isRunning() ? getValor(displayConfig, "TESTING", idioma) : getValor(displayConfig, "TESTER", idioma));
     display.setCursor(45, 19);
@@ -1600,24 +1366,24 @@ void drawScreen(Mode mode) {
     display.println(getValor(displayConfig, "SELECTLANG", idioma));
     display.println(getNomeIdioma(numIdioma));
     display.println("Fator calib RPM:");
-    display.println(CalibFat,3);
+    display.println(CalibFat, 3);
     if (modeConfig == 0) display.setCursor(95, 22);
     if (modeConfig == 1) display.setCursor(95, 37);
     if (modeConfig == 2) display.setCursor(95, 47);
     display.print("<");
-    if(modeCalibFatRpm == 0) display.setCursor(24, 40);
-    if(modeCalibFatRpm == 1) display.setCursor(18, 40);
+    if (modeCalibFatRpm == 0) display.setCursor(24, 40);
+    if (modeCalibFatRpm == 1) display.setCursor(18, 40);
     if (modeCalibFatRpm == 2) display.setCursor(12, 40);
     display.println("_");
-    display.println("Factory Reset");
+    display.println(getValor(displayConfig, "FRESET", idioma));
   } else if (currentMode == Mode::FREQUENCY) {
     display.setTextSize(2);
     display.setCursor(0, 14);
     String fpmString = String(fpm);
-    if(fpm < 1000 && fpm >= 100)
-      fpmString = "0"+String(fpm);
+    if (fpm < 1000 && fpm >= 100)
+      fpmString = "0" + String(fpm);
     else if (fpm < 100)
-      fpmString = "00"+String(fpm);
+      fpmString = "00" + String(fpm);
     display.print(fpmString);
     //display.print((int)fpm);
     display.setTextSize(1);
@@ -1630,7 +1396,7 @@ void drawScreen(Mode mode) {
     display.print(getValor(displayConfig, "PHASE", idioma) + " ");
     display.print(STB_phaseDegrees);
     display.println((char)247);
-    
+
     display.setCursor(0, 56);
     display.print("Duty: ");
     display.print(dutyCycle);
@@ -1644,13 +1410,13 @@ void drawScreen(Mode mode) {
       display.setCursor(95, 56);
     }
     display.print("<");
-    if(valInEncoder == 0){
+    if (valInEncoder == 0) {
       display.setCursor(40, 25);
     }
-    if(valInEncoder == 1){
+    if (valInEncoder == 1) {
       display.setCursor(27, 25);
     }
-    if(valInEncoder == 2){
+    if (valInEncoder == 2) {
       display.setCursor(14, 25);
     }
     display.print("_");
@@ -1659,10 +1425,10 @@ void drawScreen(Mode mode) {
       switch (vibroState) {
         case VibroState::VIBRO_HOME:
           display.println(getValor(displayConfig, "CALIBRATE", idioma));
-          if(FFTUH){
-            display.println(">Hanning - Hamming");
-          }else{
-            display.println("Hanning - >Hamming");
+          if (FFTUH) {
+            display.print(getValor(displayConfig, "FFTUH1", idioma));
+          } else {
+            display.print(getValor(displayConfig, "FFTUH0", idioma));
           }
           break;
         case VibroState::VIBRO_SELECTCALIB:
@@ -1699,19 +1465,19 @@ void drawScreen(Mode mode) {
           break;
         case VibroState::VIBRO_MEASURERESULT:
           display.print("PA: ");
-          display.print(aPeak* 1000, 4);
+          display.print(aPeak, 4);
           display.println("mm/s2");
           display.print("RMS A: ");
-          display.print(aRMS* 1000, 4);
+          display.print(aRMS, 4);
           display.println("mm/s2");
           display.print("DP: ");
-          display.print(stdDev* 1000, 4);
+          display.print(stdDev, 4);
           display.println("mm/s2");
           display.print("V RMS: ");
-          display.print(vRMS* 1000, 4);
+          display.print(vRMS, 4);
           display.println("mm/s2");
           display.print("FD: ");
-          display.print(freqDominant* 1000, 2);
+          display.print(freqDominant, 2);
           display.println("Hz");
           break;
         case VibroState::VIBRO_ABOUT:

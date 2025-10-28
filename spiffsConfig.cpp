@@ -185,6 +185,12 @@ bool iniciarSpiffs() {
     Serial.println("SPIFFS Mount Failed");
     return false;
   }
+  if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < 10240) {
+    Serial.println("SPIFFS Total: "+SPIFFS.totalBytes());
+    Serial.println("SPIFFS Usados: "+SPIFFS.usedBytes());
+    Serial.println("⚠️ Pouco espaço no SPIFFS, limpe arquivos antigos!");
+  }
+  delay(100);
   return true;
 }
 void testSpiffs(){
@@ -199,62 +205,13 @@ void testSpiffs(){
   deleteFile(SPIFFS, "/test.txt");
   Serial.println("Test complete");
 }
-
+/*
 File csvFile;
 String currentCsvName = "";
 String csvPrefix = "/medicao_";
 String csvExtension = ".csv";
 int MAX_CSV_FILES = 10;
 
-/*bool startCsvLog(int indexFile) {
-    std::vector<int> fileIndices;
-
-    // Varre os arquivos existentes
-    File root = SPIFFS.open("/");
-    if (!root) {
-        Serial.println("❌ Erro ao abrir SPIFFS");
-        return false;
-    }
-
-    File file = root.openNextFile();
-    while (file) {
-        String name = String(file.name());
-        if (name.startsWith(csvPrefix) && name.endsWith(csvExtension)) {
-            int start = csvPrefix.length();
-            int end = name.indexOf('.', start);
-            int num = name.substring(start, end).toInt();
-            fileIndices.push_back(num);
-        }
-        file = root.openNextFile();
-    }
-
-    // Ordena índices para facilitar
-    std::sort(fileIndices.begin(), fileIndices.end());
-
-    // Remove arquivos mais antigos se ultrapassar MAX_CSV_FILES - 1
-    while (fileIndices.size() >= MAX_CSV_FILES) {
-        int delIndex = fileIndices.front();  // remove o mais antigo
-        String delName = csvPrefix + String(delIndex) + csvExtension;
-        SPIFFS.remove(delName);
-        Serial.printf("🧹 Arquivo antigo removido: %s\n", delName.c_str());
-        fileIndices.erase(fileIndices.begin());
-    }
-
-    currentCsvName = csvPrefix + String(indexFile) + csvExtension;
-
-    // Cria o novo arquivo CSV
-    csvFile = SPIFFS.open(currentCsvName, FILE_WRITE);
-    if (!csvFile) {
-        Serial.println("❌ Erro ao criar arquivo CSV!");
-        return false;
-    }
-
-    // Cabeçalho CSV
-    csvFile.println("SampleRate,Tempo (s),Aceleração (m/s²),X,Y,Z");
-    csvFile.flush();
-    Serial.printf("📁 Iniciado log em: %s\n", currentCsvName.c_str());
-    return true;
-}*/
 bool startCsvLog(int indexFile) {
     std::vector<int> fileIndices;
 
@@ -329,3 +286,4 @@ bool endCsvLog() {
       return false;
     }
 }
+*/

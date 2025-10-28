@@ -255,7 +255,6 @@ bool carregarDadosEEPROM(std::vector<Config>& lista) {
     Serial.println("✅ Dados da EEPROM carregados.");
     return true;
 }
-
 // Uma nova função para salvar dados na EEPROM
 bool salvarDadosEEPROM(const std::vector<Config>& lista) {
     // Inicia a EEPROM com o tamanho correto
